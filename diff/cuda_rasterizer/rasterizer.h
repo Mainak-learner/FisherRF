@@ -50,6 +50,7 @@ namespace CudaRasterizer
 			const bool prefiltered,
 			float* out_color,
 			float* out_depth,
+			float* out_entropy,
 			int* radii = nullptr,
 			int* pixel_gaussian_counter=nullptr,
 			bool debug = false);
