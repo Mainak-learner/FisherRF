@@ -272,7 +272,8 @@ renderCUDA(
 	uint32_t* __restrict__ n_contrib,
 	const float* __restrict__ bg_color,
 	float* __restrict__ out_color,
-	float* __restrict__ out_depth)
+	float* __restrict__ out_depth,
+	float* __restrict__ out_entropy)
 {
 	// Identify current tile and associated min/max pixel range.
 	auto block = cg::this_thread_block();
@@ -305,6 +306,7 @@ renderCUDA(
 	uint32_t contributor = 0;
 	uint32_t last_contributor = 0;
 	float C[CHANNELS] = { 0 };
+	float entropy = 0.0f;  // Add this line here
 
 	// Iterate over batches until all done or range is complete
 	for (int i = 0; i < rounds; i++, toDo -= BLOCK_SIZE)
@@ -355,6 +357,11 @@ renderCUDA(
 				continue;
 			}
 
+			// Compute entropy contribution
+			float p = alpha * T;
+			if (p > 0)
+				entropy -= p * log2f(p);
+
 			// Eq. (3) from 3D Gaussian splatting paper.
 			for (int ch = 0; ch < CHANNELS; ch++)
 				C[ch] += features[collected_id[j] * CHANNELS + ch] * alpha * T;
@@ -368,12 +375,18 @@ renderCUDA(
 		}
 	}
 
+	if (T > 0)
+    {
+		entropy -= T * log2f(T);
+	}
+
 	// All threads that treat valid pixel write out their final
 	// rendering data to the frame and auxiliary buffers.
 	if (inside)
 	{
 		final_T[pix_id] = T;
 		n_contrib[pix_id] = last_contributor;
+    	out_entropy[pix_id] = entropy;
 		out_depth[pix_id] = depth;
 		for (int ch = 0; ch < CHANNELS; ch++)
 			out_color[ch * H * W + pix_id] = C[ch] + T * bg_color[ch];
@@ -393,7 +406,8 @@ void FORWARD::render(
 	uint32_t* n_contrib,
 	const float* bg_color,
 	float* out_color,
-	float* out_depth)
+	float* out_depth,
+	float* out_entropy)
 {
 	renderCUDA<NUM_CHANNELS> << <grid, block >> > (
 		ranges,
@@ -407,7 +421,8 @@ void FORWARD::render(
 		n_contrib,
 		bg_color,
 		out_color,
-		out_depth);
+		out_depth,
+		out_entropy);
 }
 
 void FORWARD::preprocess(int P, int D, int M,

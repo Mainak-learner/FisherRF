@@ -168,7 +168,7 @@ def modified_render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch
         colors_precomp = override_color
 
     # Rasterize visible Gaussians to image, obtain their radii (on screen). 
-    rendered_image, depth, radii, pixel_gaussian_counter = rasterizer(
+    rendered_image, depth, radii, pixel_gaussian_counter, out_entropy = rasterizer(
         means3D = means3D,
         means2D = means2D,
         shs = shs,
@@ -186,4 +186,5 @@ def modified_render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch
             "radii": radii,
             "depth": depth,
             "pixel_gaussian_counter": pixel_gaussian_counter,
+            "entropy": out_entropy
             }

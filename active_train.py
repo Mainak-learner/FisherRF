@@ -309,7 +309,7 @@ if __name__ == "__main__":
     parser.add_argument("--checkpoint_iterations", nargs="+", type=int, default=[])
     parser.add_argument("--start_checkpoint", type=str, default = None)
     # Flags for view selections
-    parser.add_argument("--method", type=str, default="rand")
+    parser.add_argument("--method", type=str, default="rand", choices=["rand", "entropy", "H_reg"])
     parser.add_argument("--schema", type=str, default="all")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--reg_lambda", type=float, default=1e-6)

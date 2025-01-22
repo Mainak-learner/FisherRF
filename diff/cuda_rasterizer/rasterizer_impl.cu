@@ -217,6 +217,7 @@ int CudaRasterizer::Rasterizer::forward(
 	const bool prefiltered,
 	float* out_color,
 	float* out_depth,
+	float* out_entropy,
 	int *radii,
 	int *pixel_gaussian_counter,
 	bool debug)
@@ -333,7 +334,7 @@ int CudaRasterizer::Rasterizer::forward(
 		imgState.accum_alpha,
 		imgState.n_contrib,
 		background,
-		out_color, out_depth), debug)
+		out_color, out_depth, out_entropy), debug)
 
 	// copy out n_contrib so that we can track number of piels outside C++
 	if (pixel_gaussian_counter != nullptr)
