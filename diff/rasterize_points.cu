@@ -113,9 +113,9 @@ RasterizeGaussiansCUDA(
 		prefiltered,
 		out_color.contiguous().data<float>(),
 		out_depth.contiguous().data<float>(),
+		out_entropy.contiguous().data<float>(),
 		radii.contiguous().data<int>(),
 		pixel_gaussian_counter.contiguous().data<int>(),
-		out_entropy.contiguous().data<float>(),
 		debug);
   }
 //   return std::make_tuple(rendered, out_color, out_depth, radii, geomBuffer, binningBuffer, imgBuffer);
