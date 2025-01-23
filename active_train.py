@@ -309,6 +309,7 @@ if __name__ == "__main__":
     parser.add_argument("--quiet", action="store_true")
     parser.add_argument("--checkpoint_iterations", nargs="+", type=int, default=[])
     parser.add_argument("--start_checkpoint", type=str, default = None)
+    parser.add_argument("--distance_sigma", type=float, default=1.0, help="Controls the influence of distance in view selection")
     # Flags for view selections
     parser.add_argument("--method", type=str, default="rand", choices=["rand", "entropy", "H_reg"])
     parser.add_argument("--schema", type=str, default="all")
