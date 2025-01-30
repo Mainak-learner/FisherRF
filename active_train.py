@@ -15,6 +15,7 @@ from active.schema import schema_dict
 from utils.loss_utils import ssim
 from lpipsPyTorch import lpips, lpips_func
 from active import methods_dict
+from depth_anything import DepthAnything
 import wandb
 try:
     from torch.utils.tensorboard import SummaryWriter
@@ -58,6 +59,10 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     scene = Scene(dataset, gaussians)
     gaussians.training_setup(opt)
     
+    #Creating an instance of DepthAnything Model to evaluate depth:
+    depth_model = DepthAnything.from_pretrained("LiheYoung/depth_anything_vitl14").to("cuda")
+    depth_model.eval()
+
     # Active View Selection
     schema = schema_dict[args.schema](dataset_size=len(scene.getTrainCameras()), scene=scene)
     print(f"schema: {schema.load_its}")
@@ -170,7 +175,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             before_selection = schema.num_views_to_add(iteration + 1) > 0
             # Log and save
             training_report(tb_writer, iteration, Ll1, loss, l1_loss, iter_start.elapsed_time(iter_end), 
-                            testing_iterations, scene, render, (pipe, background), before_selection=before_selection, 
+                            testing_iterations, scene, render, (pipe, background), depth_model, before_selection=before_selection, 
                             log_every_image=args.log_every_image)
             if (iteration in saving_iterations):
                 print("\n[ITER {}] Saving Gaussians".format(iteration))
@@ -224,7 +229,7 @@ def prepare_output_and_logger(args):
         print("Tensorboard not available: not logging progress")
     return tb_writer
 
-def training_report(tb_writer, iteration, Ll1, loss, l1_loss, elapsed, testing_iterations, scene : Scene, renderFunc, renderArgs, before_selection=False, log_every_image=False):
+def training_report(tb_writer, iteration, Ll1, loss, l1_loss, elapsed, testing_iterations, scene : Scene, renderFunc, renderArgs, depth_model, before_selection=False, log_every_image=False):
     if tb_writer:
         tb_writer.add_scalar('train_loss_patches/l1_loss', Ll1.item(), iteration)
         tb_writer.add_scalar('train_loss_patches/total_loss', loss.item(), iteration)
@@ -244,11 +249,24 @@ def training_report(tb_writer, iteration, Ll1, loss, l1_loss, elapsed, testing_i
                 psnr_test = 0.0
                 ssim_test = 0.0
                 lpips_test = 0.0
+                depth_loss_test = 0.0
 
                 log_images = {}
                 for idx, viewpoint in enumerate(config['cameras']):
-                    image = torch.clamp(renderFunc(viewpoint, scene.gaussians, *renderArgs)["render"], 0.0, 1.0)
+                    render_pkg = renderFunc(viewpoint, scene.gaussians, *renderArgs)
+                    image = torch.clamp(render_pkg["render"], 0.0, 1.0)
                     gt_image = torch.clamp(viewpoint.original_image.to("cuda"), 0.0, 1.0)
+
+                    #Obtaining predicted depth from trained 3DGS model and gt_depth from DepthAnything
+                    predicted_depth = render_pkg["depth"]
+                    with torch.no_grad():
+                        gt_depth = depth_model(gt_image.unsqueeze(0))
+                    
+                    #Evaluating the l1 depth_loss
+                    predicted_depth = (predicted_depth - predicted_depth.min()) / (predicted_depth.max() - predicted_depth.min())
+                    gt_depth = (gt_depth - gt_depth.min()) / (gt_depth.max() - gt_depth.min())
+                    depth_loss = l1_loss(predicted_depth, gt_depth).mean()
+
                     if tb_writer and ((idx < 5) or log_every_image):
                         tb_writer.add_images(config['name'] + "_view_{}/render".format(idx), image[None], global_step=iteration)
                         log_images[f"render/{idx:03d}"] = wandb.Image(image[None])
@@ -258,6 +276,8 @@ def training_report(tb_writer, iteration, Ll1, loss, l1_loss, elapsed, testing_i
                     l1_test += l1_loss(image, gt_image).mean().double()
                     psnr_test += psnr(image, gt_image).mean().double()
                     ssim_test += ssim(image, gt_image).mean().double()
+                    depth_loss_test += depth_loss.item()
+                    
                     lpips.to(image.device)
                     lpips_test += lpips(image, gt_image).mean().double()
 
@@ -268,15 +288,17 @@ def training_report(tb_writer, iteration, Ll1, loss, l1_loss, elapsed, testing_i
                 l1_test /= len(config['cameras'])          
                 ssim_test /= len(config['cameras'])
                 lpips_test /= len(config['cameras'])
+                depth_loss_test /= len(config['cameras'])
 
-                print("\n[ITER {}] Evaluating {}: L1 {} PSNR {} SSIM {} LPIPS {}".format(iteration, config['name'], l1_test, psnr_test, ssim_test, lpips_test))
+                print("\n[ITER {}] Evaluating {}: L1 {} PSNR {} SSIM {} LPIPS {} Depth Loss {}".format(iteration, config['name'], l1_test, psnr_test, ssim_test, lpips_test, depth_loss_test))
                 if tb_writer:
                     tb_writer.add_scalar(config['name'] + '/loss_viewpoint - l1_loss', l1_test, iteration)
                     tb_writer.add_scalar(config['name'] + '/loss_viewpoint - psnr', psnr_test, iteration)
                     tb_writer.add_scalar(config['name'] + '/loss_viewpoint - ssim', ssim_test, iteration)
                     tb_writer.add_scalar(config['name'] + '/loss_viewpoint - lpips', lpips_test, iteration)
+                    tb_writer.add_scalar(config['name'] + '/loss_viewpoint - depth_loss', depth_loss_test, iteration)
                 log_dict = {config['name'] + '/l1_loss': l1_test, config['name'] + '/psnr': psnr_test,
-                            config['name'] + '/ssim': ssim_test, config['name'] + '/lpips': lpips_test,}
+                            config['name'] + '/ssim': ssim_test, config['name'] + '/lpips': lpips_test, config['name'] + '/depth_loss': depth_loss_test}
                 wandb.log(log_dict, step=iteration)
 
         if tb_writer:
