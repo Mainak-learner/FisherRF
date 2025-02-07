@@ -108,8 +108,12 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 candidate_views_filter = getattr(schema, "candidate_views_filter")[iteration] if hasattr(schema, "candidate_views_filter") else None
                 scene.candidate_views_filter = candidate_views_filter
                 
-                # Because selection is time consumeing
-                selected_views = active_method.nbvs(gaussians, scene, num_views, pipe, background, exit_func=csm.should_exit)
+                if args.method == "entropy":
+                    completion_rate = iteration/opt.iterations
+                    # Because selection is time consumeing
+                    selected_views = active_method.nbvs(gaussians, scene, num_views, pipe, background, completion_rate, exit_func=csm.should_exit)
+                else:
+                    selected_views = active_method.nbvs(gaussians, scene, num_views, pipe, background, exit_func=csm.should_exit)
             except RuntimeError as e:
                 print(e)
                 print("selector exited early")
@@ -309,7 +313,7 @@ if __name__ == "__main__":
     parser.add_argument("--quiet", action="store_true")
     parser.add_argument("--checkpoint_iterations", nargs="+", type=int, default=[])
     parser.add_argument("--start_checkpoint", type=str, default = None)
-    parser.add_argument("--distance_sigma", type=float, default=1.0, help="Controls the influence of distance in view selection")
+    parser.add_argument("--distance_sigma", type=float, default=40.0, help="Controls the influence of distance in view selection")
     # Flags for view selections
     parser.add_argument("--method", type=str, default="rand", choices=["rand", "entropy", "H_reg"])
     parser.add_argument("--schema", type=str, default="all")
