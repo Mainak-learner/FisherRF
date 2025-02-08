@@ -48,7 +48,7 @@ class EntropySelector(torch.nn.Module):
             distance_weight = torch.exp(-min_distance / new_sigma)
             distance_weights.append(distance_weight)
 
-        if random.random() > torch.exp(-max(min_distances)/min(min_distances)):
+        if random.random() < torch.exp(-(max(min_distances) - min(min_distances))/min(min_distances)):
             weighted_scores = entropy_scores
         else:
             weighted_scores = [e * w for e, w in zip(entropy_scores, distance_weights)]
