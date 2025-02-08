@@ -3,6 +3,7 @@ from tqdm import tqdm
 from typing import List
 from scene import Scene
 import numpy as np
+import random
 from gaussian_renderer import modified_render
 
 def calculate_distance(cam1, cam2):
@@ -17,6 +18,7 @@ class EntropySelector(torch.nn.Module):
         self.debug = getattr(args, 'debug', False)
         self.distance_sigma = args.distance_sigma  # Controls the influence of distance
         self.views_added = 0
+        self.use_scheduler = args.use_scheduler
 
     def nbvs(self, gaussians, scene: Scene, num_views, pipe, background, completion_rate, exit_func) -> List[int]:
         candidate_views = list(scene.get_candidate_set())
@@ -25,8 +27,12 @@ class EntropySelector(torch.nn.Module):
         
         entropy_scores = []
         distance_weights = []
+        min_distances = []
 
-        new_sigma = self.update_distance_sigma(completion_rate)
+        if self.use_scheduler:
+            new_sigma = self.distance_sigma
+        else:
+            new_sigma = self.update_distance_sigma(completion_rate)
 
         for cam in tqdm(candidate_cameras, desc="Calculating entropy for candidate views"):
             if exit_func():
@@ -38,11 +44,14 @@ class EntropySelector(torch.nn.Module):
 
             # Calculate minimum distance to existing training views
             min_distance = min(calculate_distance(cam, train_cam) for train_cam in train_cameras)
+            min_distances.append(min_distance)
             distance_weight = torch.exp(-min_distance / new_sigma)
             distance_weights.append(distance_weight)
 
-        # Apply distance-based weighting to entropy scores
-        weighted_scores = [e * w for e, w in zip(entropy_scores, distance_weights)]
+        if random.random() > torch.exp(-max(min_distances)):
+            weighted_scores = entropy_scores
+        else:
+            weighted_scores = [e * w for e, w in zip(entropy_scores, distance_weights)]
 
         # Select the views with the highest weighted entropy scores
         selected_indices = torch.tensor(weighted_scores).argsort(descending=True)[:num_views]
