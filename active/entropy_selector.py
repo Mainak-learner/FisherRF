@@ -51,7 +51,7 @@ class EntropySelector(torch.nn.Module):
         max_min_dist = max(min_distances)
 
         #Boltzmann exploration (max-min distance is the temperature):
-        probs = np.exp(np.array(entropy_scores) / max_min_dist)
+        probs = np.exp(np.array(entropy_scores) / max_min_dist.item())
 
         # if torch.sigmoid((max(min_distances) - min(min_distances))/min(min_distances)) < 0.6:
         #     weighted_scores = entropy_scores
