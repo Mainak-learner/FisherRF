@@ -64,7 +64,7 @@ class EntropySelector(torch.nn.Module):
         # return [candidate_views[i] for i in selected_indices.tolist()]
 
         #Select based on the boltzmann distribution:
-        selected_indices = np.random.choice(list(range(len(probs))), size=num_views, replace=False, p=probs)        
+        selected_indices = np.random.choice(list(range(len(probs))), size=num_views, replace=False, p=(probs/np.sum(probs)))        
 
         return [candidate_views[i] for i in selected_indices]
 
