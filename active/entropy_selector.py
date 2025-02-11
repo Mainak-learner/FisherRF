@@ -51,20 +51,24 @@ class EntropySelector(torch.nn.Module):
         max_min_dist = max(min_distances)
 
         #Boltzmann exploration (max-min distance is the temperature):
-        probs = np.exp(np.array(entropy_scores) / max_min_dist.item())
+        # probs = np.exp(np.array(entropy_scores) / max_min_dist.item())
 
         # if torch.sigmoid((max(min_distances) - min(min_distances))/min(min_distances)) < 0.6:
         #     weighted_scores = entropy_scores
         # else:
-        #     weighted_scores = [e * w for e, w in zip(entropy_scores, distance_weights)]
+        if self.views_added % 2 != 0:
+            weighted_scores = [e * w for e, w in zip(entropy_scores, distance_weights)]
+            # Select the views with the highest weighted entropy scores
+            selected_indices = torch.tensor(weighted_scores).argsort(descending=True)[:num_views]
+        else:
+            selected_indices = torch.tensor(min_distances).argsort(descending=True)[:num_views]
+        
+        self.views_added +=  num_views
 
-        # # Select the views with the highest weighted entropy scores
-        # selected_indices = torch.tensor(weighted_scores).argsort(descending=True)[:num_views]
-
-        # return [candidate_views[i] for i in selected_indices.tolist()]
+        return [candidate_views[i] for i in selected_indices.tolist()]
 
         #Select based on the boltzmann distribution:
-        selected_indices = np.random.choice(list(range(len(probs))), size=num_views, replace=False, p=(probs/np.sum(probs)))        
+        # selected_indices = np.random.choice(list(range(len(probs))), size=num_views, replace=False, p=(probs/np.sum(probs)))        
 
         return [candidate_views[i] for i in selected_indices]
 
