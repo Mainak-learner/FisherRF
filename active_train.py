@@ -17,6 +17,7 @@ from lpipsPyTorch import lpips, lpips_func
 from active import methods_dict
 from torch.serialization import add_safe_globals
 from numpy._core.multiarray import scalar
+from numpy import dtype 
 import wandb
 try:
     from torch.utils.tensorboard import SummaryWriter
@@ -42,7 +43,7 @@ def save_checkpoint(gaussians, iteration, scene, base_iter=0, save_path=None, sa
     torch.save(ckpt_dict, save_path)   
 
 def load_checkpoint(ckpt_path: str, gaussians, scene, opt, ignore_train_idxs=False):
-    add_safe_globals([scalar])  # Allow numpy scalars
+    add_safe_globals([scalar, dtype])  # Allow numpy scalars
     ckpt_dict = torch.load(ckpt_path, weights_only=True)
     (model_params, first_iter, train_idxs) = ckpt_dict["model_params"], ckpt_dict["first_iter"], ckpt_dict["train_idx"]
     gaussians.restore(model_params, opt)
