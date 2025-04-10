@@ -112,30 +112,49 @@ def render_uncertainty_from_poses(poses, gaussians, pipe, background, output_dir
         fisher_unc_np = fisher_uncertainty_norm.squeeze(0).cpu().numpy()  # Single-channel: (height, width)
         var_unc_np = var_uncertainty_norm.cpu().numpy()  # Single-channel: (height, width)
 
-        # Plotting (3 subplots per row)
-        plt.subplot(len(poses), 3, idx * 3 + 1)
+        # Create a new figure for this pose
+        plt.figure(figsize=(15, 5))
+        
+        plt.subplot(1, 3, 1)
         plt.imshow(render_img_np)
         plt.title(f"Render - Pose {idx}")
         plt.axis('off')
 
-        plt.subplot(len(poses), 3, idx * 3 + 2)
+        plt.subplot(1, 3, 2)
         plt.imshow(fisher_unc_np, cmap='viridis')
         plt.title(f"FisherRF Unc - Pose {idx}")
         plt.axis('off')
 
-        plt.subplot(len(poses), 3, idx * 3 + 3)
+        plt.subplot(1, 3, 3)
         plt.imshow(var_unc_np, cmap='viridis')
         plt.title(f"Var Unc - Pose {idx}")
         plt.axis('off')
 
-        # Save images
+        plt.tight_layout()
+        plt.savefig(os.path.join(output_dir, f"comparison_{idx:03d}.png"))
+        plt.show()  # This will display the figure in Colab
+        plt.close()  # Close the figure to free memory
+
+        # Save individual images
         side_by_side_rgb = torch.cat([var_rgb, fisher_rgb], dim=2)  # Concatenate along width
         side_by_side_unc = torch.cat([var_uncertainty_norm, fisher_uncertainty_norm], dim=2)  # Concatenate along width
         torchvision.utils.save_image(side_by_side_rgb, os.path.join(output_dir, f"rgb_{idx:03d}.png"))
         torchvision.utils.save_image(side_by_side_unc, os.path.join(output_dir, f"uncertainty_{idx:03d}.png"))
 
+    # Create a separate figure for the combined plot at the end
+    plt.figure(figsize=(15, 5 * len(poses)))
+    
+    for idx in range(len(poses)):
+        # Load the saved images for the combined figure
+        img = plt.imread(os.path.join(output_dir, f"comparison_{idx:03d}.png"))
+        
+        plt.subplot(len(poses), 1, idx + 1)
+        plt.imshow(img)
+        plt.axis('off')
+    
     plt.tight_layout()
     plt.savefig(os.path.join(output_dir, "uncertainty_plots.png"))
+    plt.show()
     plt.close()
 
 if __name__ == "__main__":
