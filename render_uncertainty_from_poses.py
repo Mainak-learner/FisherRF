@@ -2,29 +2,26 @@ import torch
 import os
 import numpy as np
 from scene import Scene, GaussianModel
-from gaussian_renderer import render, forward_k_times
+from gaussian_renderer import render, forward_k_times, modified_render
 from utils.general_utils import safe_state
 from arguments import ModelParams, PipelineParams, OptimizationParams
 from argparse import ArgumentParser
 from scene.cameras import Camera
 import torchvision
 import json
-from gaussian_renderer import GaussianModel
-import numpy as np
-from scene.cameras import Camera
-from gaussian_renderer import modified_render
 from einops import reduce
 import matplotlib.pyplot as plt
 
-@torch.no_grad()
-def load_checkpoint(ckpt_path: str, gaussians, scene, opt, ignore_train_idxs=False):
-    ckpt_dict = torch.load(ckpt_path, weights_only=False)  # Explicitly allow all data
-    (model_params, first_iter, train_idxs) = ckpt_dict["model_params"], ckpt_dict["first_iter"], ckpt_dict["train_idx"]
-    gaussians.restore(model_params, opt)
-    if not ignore_train_idxs:
-        scene.train_idxs = train_idxs
-    base_iter = ckpt_dict.get("base_iter", 0)
-    return first_iter, base_iter
+# Define load_model function
+def load_model(checkpoint_path, dataset, opt):
+    gaussians = GaussianModel(dataset, is_variational=True)
+    scene = Scene(dataset, gaussians)
+    if os.path.exists(checkpoint_path):
+        ckpt_dict = torch.load(checkpoint_path, weights_only=False)  # Explicitly allow all data
+        gaussians.restore(ckpt_dict["model_params"], opt)
+    else:
+        raise FileNotFoundError(f"Checkpoint not found at {checkpoint_path}")
+    return gaussians, scene
 
 def render_uncertainty_from_poses(poses, gaussians, pipe, background, output_dir):
     os.makedirs(output_dir, exist_ok=True)
@@ -38,7 +35,7 @@ def render_uncertainty_from_poses(poses, gaussians, pipe, background, output_dir
             T=np.array(pose["T"]),
             FoVx=pose["FoVx"],
             FoVy=pose["FoVy"],
-            image=None,  # Ground truth will be handled separately if available
+            image=None,
             gt_alpha_mask=None,
             image_name=f"pose_{idx:03d}",
             uid=idx,
@@ -69,8 +66,7 @@ def render_uncertainty_from_poses(poses, gaussians, pipe, background, output_dir
         fisher_uncertainty = torch.log(fisher_uncertainty / pixel_gaussian_counter.clamp(min=1e-6))
 
         # Ground Truth (Placeholder: Replace with actual ground truth if available)
-        # For novel poses, ground truth may not exist. Using a black image as placeholder.
-        gt_image = torch.zeros_like(var_rgb)  # Replace with actual gt if available
+        gt_image = torch.zeros_like(var_rgb)  # Placeholder black image
 
         # Normalize uncertainties to 0-1
         var_min, var_max = var_uncertainty.min(), var_uncertainty.max()
@@ -126,11 +122,12 @@ if __name__ == "__main__":
     parser.add_argument("--output_dir", type=str, default="./uncertainty_renders", help="Output directory for renders")
 
     args = parser.parse_args()
+    safe_state(args.quiet)
 
     dataset = lp.extract(args)
     opt = op.extract(args)
     pipe = pp.extract(args)
-    gaussians, scene = load_model(args.checkpoint, dataset, opt)
+    gaussians, scene = load_model(args.checkpoint, dataset, opt)  # Correct function call
 
     with open(args.poses_file, "r") as f:
         poses = json.load(f)
