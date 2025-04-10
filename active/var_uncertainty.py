@@ -7,6 +7,7 @@ class VarUncertaintySelector:
         self.args = args
 
     def nbvs(self, gaussians, scene, num_views, pipe, background, exit_func=None):
+        candidate_views = list(scene.get_candidate_set())
         candidate_cameras = scene.getCandidateCameras()
         if scene.candidate_views_filter:
             candidate_views = [cam for i, cam in enumerate(candidate_views) if i in scene.candidate_views_filter]
@@ -24,6 +25,6 @@ class VarUncertaintySelector:
 
         # Sort views by uncertainty and select top num_views
         sorted_indices = torch.argsort(torch.tensor(uncertainties), descending=True)
-        selected_views = [candidate_views[i].uid for i in sorted_indices[:num_views]]
+        selected_views = [candidate_views[i] for i in sorted_indices[:num_views].tolist()]
 
         return selected_views
