@@ -11,6 +11,7 @@ import torchvision
 import json
 from einops import reduce, repeat
 import matplotlib.pyplot as plt
+from tqdm import tqdm  # Add this import
 
 # Define load_model function
 def load_model(checkpoint_path, dataset, opt):
@@ -89,9 +90,10 @@ def render_uncertainty_from_poses(poses, gaussians, pipe, background, output_dir
         hessian_color = repeat(H_per_gaussian, "n -> n c", c=3)
         cur_hessian_color = hessian_color * gaussian_depths
         fisher_render_pkg = render(viewpoint, gaussians, pipe, background, override_color=cur_hessian_color)
-        fisher_uncertainty = reduce(fisher_render_pkg["render"], "c h w -> h w", "mean").detach()  # Detach before numpy
+        fisher_rgb = fisher_render_pkg["render"]
         render_pkg = modified_render(viewpoint, gaussians, pipe, background)
         pixel_gaussian_counter = render_pkg["pixel_gaussian_counter"]
+        fisher_uncertainty = reduce(fisher_render_pkg["render"], "c h w -> h w", "mean").detach()  # Detach before numpy
         fisher_uncertainty = torch.log(fisher_uncertainty / pixel_gaussian_counter.clamp(min=1e-6))
 
         # Normalize uncertainties to 0-1
@@ -152,14 +154,15 @@ if __name__ == "__main__":
     pipe = pp.extract(args)
     gaussians, scene = load_model(args.checkpoint, dataset, opt)
 
-    # Precompute H_per_gaussian using training and testing views
+    # Define the background color before calling precompute_H_per_gaussian
+    bg_color = [1, 1, 1] if dataset.white_background else [0, 0, 0]
+    background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
+
+    # Now call precompute_H_per_gaussian with the defined background
     H_per_gaussian = precompute_H_per_gaussian(gaussians, scene, pipe, background)
 
     with open(args.poses_file, "r") as f:
         poses = json.load(f)
-
-    bg_color = [1, 1, 1] if dataset.white_background else [0, 0, 0]
-    background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
 
     render_uncertainty_from_poses(poses, gaussians, pipe, background, args.output_dir, H_per_gaussian)
     print(f"Uncertainty renders and plots saved to {args.output_dir}")
