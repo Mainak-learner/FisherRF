@@ -6,12 +6,12 @@ from gaussian_renderer import render, forward_k_times, modified_render
 from utils.general_utils import safe_state
 from arguments import ModelParams, PipelineParams, OptimizationParams
 from argparse import ArgumentParser
-from scene.cameras import Camera
 import torchvision
 import json
 from einops import reduce, repeat
 import matplotlib.pyplot as plt
-from tqdm import tqdm  # Add this import
+from tqdm import tqdm
+import random
 
 # Define load_model function
 def load_model(checkpoint_path, dataset, opt):
@@ -53,30 +53,29 @@ def precompute_H_per_gaussian(gaussians, scene, pipeline, background):
 
     return H_per_gaussian.detach()
 
-def render_uncertainty_from_poses(poses, gaussians, pipe, background, output_dir, H_per_gaussian):
+def render_uncertainty_from_test_views(scene, gaussians, pipe, background, output_dir, H_per_gaussian, num_views=5):
     os.makedirs(output_dir, exist_ok=True)
-    plt.figure(figsize=(15, 5 * len(poses)))  # Adjusted for 3 columns
-
-    for idx, pose in enumerate(poses):
-        # Convert pose to Camera object with image=None
-        viewpoint = Camera(
-            colmap_id=idx,
-            R=np.array(pose["R"]),  # Should be 3x3
-            T=np.array(pose["T"]).reshape(3, 1),  # Ensure 3x1, will be squeezed in Camera
-            FoVx=pose["FoVx"],
-            FoVy=pose["FoVy"],
-            image=None,
-            gt_alpha_mask=None,
-            image_name=f"pose_{idx:03d}",
-            uid=idx,
-            data_device="cuda"
-        )
-        print(f"Viewpoint {idx}: R shape {viewpoint.R.shape}, T shape {viewpoint.T.shape}")  # Debug print
-
+    
+    # Get all test views
+    test_views = scene.getTestCameras()
+    print(f"Total test views available: {len(test_views)}")
+    
+    # Randomly select num_views from test views
+    if len(test_views) <= num_views:
+        selected_views = test_views
+    else:
+        selected_indices = random.sample(range(len(test_views)), num_views)
+        selected_views = [test_views[i] for i in selected_indices]
+    
+    print(f"Selected {len(selected_views)} test views")
+    
+    for idx, viewpoint in enumerate(selected_views):
+        print(f"Processing test view {idx}: {viewpoint.image_name}")
+        
         # Variational Uncertainty
         variational_pkg = forward_k_times(viewpoint, gaussians, pipe, background, k=gaussians.n_models)
-        var_rgb = variational_pkg["comp_rgb"].detach()  # Detach before numpy
-        var_uncertainty = variational_pkg["comp_std"].detach()  # Detach before numpy
+        var_rgb = variational_pkg["comp_rgb"].detach()
+        var_uncertainty = variational_pkg["comp_std"].detach()
         # Convert to single-channel uncertainty
         var_uncertainty = var_uncertainty.mean(dim=0, keepdim=True)  # Shape: (1, height, width)
 
@@ -91,10 +90,14 @@ def render_uncertainty_from_poses(poses, gaussians, pipe, background, output_dir
         cur_hessian_color = hessian_color * gaussian_depths
         fisher_render_pkg = render(viewpoint, gaussians, pipe, background, override_color=cur_hessian_color)
         fisher_rgb = fisher_render_pkg["render"]
+        
         render_pkg = modified_render(viewpoint, gaussians, pipe, background)
         pixel_gaussian_counter = render_pkg["pixel_gaussian_counter"]
-        fisher_uncertainty = reduce(fisher_render_pkg["render"], "c h w -> h w", "mean").detach()  # Detach before numpy
+        fisher_uncertainty = reduce(fisher_render_pkg["render"], "c h w -> h w", "mean").detach()
         fisher_uncertainty = torch.log(fisher_uncertainty / pixel_gaussian_counter.clamp(min=1e-6))
+
+        # Ground truth image
+        gt_image = viewpoint.original_image.cuda() if viewpoint.original_image is not None else None
 
         # Normalize uncertainties to 0-1
         var_min, var_max = var_uncertainty.min(), var_uncertainty.max()
@@ -111,60 +114,63 @@ def render_uncertainty_from_poses(poses, gaussians, pipe, background, output_dir
         render_img_np = var_rgb.cpu().numpy().transpose(1, 2, 0)  # RGB image: (height, width, 3)
         fisher_unc_np = fisher_uncertainty_norm.squeeze(0).cpu().numpy()  # Single-channel: (height, width)
         var_unc_np = var_uncertainty_norm.cpu().numpy()  # Single-channel: (height, width)
-
-        # Create a new figure for this pose
-        plt.figure(figsize=(15, 5))
         
-        plt.subplot(1, 3, 1)
-        plt.imshow(render_img_np)
-        plt.title(f"Render - Pose {idx}")
-        plt.axis('off')
-
-        plt.subplot(1, 3, 2)
-        plt.imshow(fisher_unc_np, cmap='viridis')
-        plt.title(f"FisherRF Unc - Pose {idx}")
-        plt.axis('off')
-
-        plt.subplot(1, 3, 3)
-        plt.imshow(var_unc_np, cmap='viridis')
-        plt.title(f"Var Unc - Pose {idx}")
-        plt.axis('off')
+        # Create subplots
+        if gt_image is not None:
+            fig, axs = plt.subplots(1, 4, figsize=(20, 5))
+            gt_np = gt_image.cpu().numpy().transpose(1, 2, 0)
+            axs[0].imshow(gt_np)
+            axs[0].set_title(f"Ground Truth - View {viewpoint.image_name}")
+            axs[0].axis('off')
+            
+            axs[1].imshow(render_img_np)
+            axs[1].set_title(f"Render - View {viewpoint.image_name}")
+            axs[1].axis('off')
+            
+            axs[2].imshow(fisher_unc_np, cmap='viridis')
+            axs[2].set_title(f"FisherRF Uncertainty")
+            axs[2].axis('off')
+            
+            axs[3].imshow(var_unc_np, cmap='viridis')
+            axs[3].set_title(f"Variational Uncertainty")
+            axs[3].axis('off')
+        else:
+            fig, axs = plt.subplots(1, 3, figsize=(15, 5))
+            axs[0].imshow(render_img_np)
+            axs[0].set_title(f"Render - View {viewpoint.image_name}")
+            axs[0].axis('off')
+            
+            axs[1].imshow(fisher_unc_np, cmap='viridis')
+            axs[1].set_title(f"FisherRF Uncertainty")
+            axs[1].axis('off')
+            
+            axs[2].imshow(var_unc_np, cmap='viridis')
+            axs[2].set_title(f"Variational Uncertainty")
+            axs[2].axis('off')
 
         plt.tight_layout()
-        plt.savefig(os.path.join(output_dir, f"comparison_{idx:03d}.png"))
-        plt.show()  # This will display the figure in Colab
-        plt.close()  # Close the figure to free memory
+        plt.savefig(os.path.join(output_dir, f"comparison_{viewpoint.image_name}.png"))
+        plt.show()
+        plt.close()
 
-        # Save individual images
-        side_by_side_rgb = torch.cat([var_rgb, fisher_rgb], dim=2)  # Concatenate along width
-        side_by_side_unc = torch.cat([var_uncertainty_norm, fisher_uncertainty_norm], dim=2)  # Concatenate along width
-        torchvision.utils.save_image(side_by_side_rgb, os.path.join(output_dir, f"rgb_{idx:03d}.png"))
-        torchvision.utils.save_image(side_by_side_unc, os.path.join(output_dir, f"uncertainty_{idx:03d}.png"))
-
-    # Create a separate figure for the combined plot at the end
-    plt.figure(figsize=(15, 5 * len(poses)))
-    
-    for idx in range(len(poses)):
-        # Load the saved images for the combined figure
-        img = plt.imread(os.path.join(output_dir, f"comparison_{idx:03d}.png"))
+        # Save images separately
+        # torchvision.utils.save_image(var_rgb, os.path.join(output_dir, f"var_rgb_{viewpoint.image_name}.png"))
+        # torchvision.utils.save_image(fisher_rgb, os.path.join(output_dir, f"fisher_rgb_{viewpoint.image_name}.png"))
         
-        plt.subplot(len(poses), 1, idx + 1)
-        plt.imshow(img)
-        plt.axis('off')
-    
-    plt.tight_layout()
-    plt.savefig(os.path.join(output_dir, "uncertainty_plots.png"))
-    plt.show()
-    plt.close()
+        # # Save side-by-side comparison
+        # side_by_side_rgb = torch.cat([var_rgb, fisher_rgb], dim=2)  # Concatenate along width
+        # side_by_side_unc = torch.cat([var_uncertainty_norm, fisher_uncertainty_norm], dim=2)  # Concatenate along width
+        # torchvision.utils.save_image(side_by_side_rgb, os.path.join(output_dir, f"rgb_comparison_{viewpoint.image_name}.png"))
+        # torchvision.utils.save_image(side_by_side_unc, os.path.join(output_dir, f"uncertainty_comparison_{viewpoint.image_name}.png"))
 
 if __name__ == "__main__":
-    parser = ArgumentParser(description="Render uncertainty from novel poses")
+    parser = ArgumentParser(description="Render uncertainty from test views")
     lp = ModelParams(parser)
     op = OptimizationParams(parser)
     pp = PipelineParams(parser)
     parser.add_argument("--checkpoint", type=str, required=True, help="Path to trained checkpoint")
-    parser.add_argument("--poses_file", type=str, required=True, help="Path to JSON file with novel poses")
     parser.add_argument("--output_dir", type=str, default="./uncertainty_renders", help="Output directory for renders")
+    parser.add_argument("--num_views", type=int, default=5, help="Number of test views to render")
 
     args = parser.parse_args()
 
@@ -177,11 +183,9 @@ if __name__ == "__main__":
     bg_color = [1, 1, 1] if dataset.white_background else [0, 0, 0]
     background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
 
-    # Now call precompute_H_per_gaussian with the defined background
+    # Precompute H_per_gaussian using training and testing views
     H_per_gaussian = precompute_H_per_gaussian(gaussians, scene, pipe, background)
 
-    with open(args.poses_file, "r") as f:
-        poses = json.load(f)
-
-    render_uncertainty_from_poses(poses, gaussians, pipe, background, args.output_dir, H_per_gaussian)
+    # Render uncertainty from random test views
+    render_uncertainty_from_test_views(scene, gaussians, pipe, background, args.output_dir, H_per_gaussian, args.num_views)
     print(f"Uncertainty renders and plots saved to {args.output_dir}")
