@@ -41,9 +41,9 @@ class GaussianModel:
         self.rotation_activation = torch.nn.functional.normalize
 
 
-    def __init__(self, sh_degree : int):
+    def __init__(self, args=None):  # Modified to accept args instead of sh_degree
         self.active_sh_degree = 0
-        self.max_sh_degree = sh_degree  
+        self.max_sh_degree = 3  # Default from FisherRF
         self._xyz = torch.empty(0)
         self._features_dc = torch.empty(0)
         self._features_rest = torch.empty(0)
@@ -55,8 +55,18 @@ class GaussianModel:
         self.denom = torch.empty(0)
         self.optimizer = None
         self.percent_dense = 0
-        self.spatial_lr_scale = 0
-        self.setup_functions()
+        self.spatial_lr_scalar = 0
+        
+        # Variational parameters from variational-3dgs
+        self.n_models = 10  # Number of models for uncertainty
+        self.M = 5  # Number of samples for inference
+        self.pri_width = 0.05
+        self.pri_std = 0.1
+        self.pri_opacity_mean = 0.5
+        self.pri_opacity_std = 0.05
+        self.tmp = 1.0
+        self.lr_scales = [1.0, 1.0, 1.0]  # Learning rate scales for offsets
+        self.model_id = None  # Current model ID for rendering
 
     def capture(self):
         return (
@@ -96,6 +106,36 @@ class GaussianModel:
     def get_scaling(self):
         return self.scaling_activation(self._scaling)
     
+    def compute_scal(self): 
+        scal = self._scaling
+        sample_model_ids = torch.randperm(self.n_models)[:self.M].cuda().requires_grad_(False).detach()
+
+        width = self.offsets["_scaling_offset"][...,sample_model_ids].mean(dim=-1)
+        width = torch.nn.functional.softplus(width).clamp_(1e-2, 1e2)
+        left = self.offsets["_scaling_offset"][...,sample_model_ids+self.n_models].mean(dim=-1)
+
+        offset_scal = (width) * torch.rand_like(scal) + left
+        offset_scal = self.mr_list*offset_scal+(1-self.mr_list)* torch.ones_like(offset_scal).cuda().requires_grad_(True)
+
+        scal = scal * offset_scal
+        scal = self.scaling_activation(scal)
+        return scal
+
+    def compute_kl_uniform_scal(self): 
+        sample_model_ids = torch.randperm(self.n_models)[:self.M].cuda().requires_grad_(False).detach()
+        width = self.offsets["_scaling_offset"][...,sample_model_ids].mean(dim=-1)
+        width = torch.nn.functional.softplus(width).clamp_(1e-2, 1e2)
+        left = self.offsets["_scaling_offset"][...,sample_model_ids+self.n_models].mean(dim=-1)
+
+        pri_left = 1-self.pri_width
+
+        right = left + width
+        prior_right = 1
+
+        kl = torch.abs(left - pri_left) + torch.abs(right - prior_right)
+
+        return kl.mean()
+    
     @property
     def get_rotation(self):
         return self.rotation_activation(self._rotation)
@@ -103,6 +143,35 @@ class GaussianModel:
     @property
     def get_xyz(self):
         return self._xyz
+    
+    def compute_xyz(self):
+        sample_model_ids = torch.randperm(self.n_models)[:self.M].cuda().requires_grad_(False).detach()
+        xyz = self._xyz
+
+        std = self.offsets["_xyz_offset"][..., sample_model_ids].mean(dim=-1)
+        std = torch.nn.functional.softplus(std)
+
+        mean = self.offsets["_xyz_offset"][..., sample_model_ids+self.n_models].mean(dim=-1)
+
+        offset = torch.randn_like(xyz).cuda().requires_grad_(True)
+        offset = offset*std+mean
+
+        xyz = xyz + self.mr_list*offset
+        return xyz
+
+    def compute_kl_xyz(self): 
+        sample_model_ids = torch.randperm(self.n_models)[:self.M].cuda().requires_grad_(False).detach()
+        std = self.offsets["_xyz_offset"][..., sample_model_ids].mean(dim=-1)
+        std = torch.nn.functional.softplus(std)
+        mean = self.offsets["_xyz_offset"][..., sample_model_ids+self.n_models].mean(dim=-1)
+
+        pri_std = torch.nn.functional.softplus(torch.tensor(self.pri_std).float()).item()
+        pri_mean, pri_std = torch.zeros_like(mean), pri_std*torch.ones_like(std)
+
+        log_sigma_pri, log_sigma_post = torch.log(pri_std), torch.log(std)
+        kl = log_sigma_pri - log_sigma_post + \
+        (torch.exp(log_sigma_post)**2 + (mean-pri_mean)**2)/(2*torch.exp(log_sigma_pri)**2) - 0.5
+        return kl.mean()
     
     @property
     def get_features(self):
@@ -114,12 +183,59 @@ class GaussianModel:
     def get_opacity(self):
         return self.opacity_activation(self._opacity)
     
+    def compute_kl_opacity(self):
+        sample_model_ids = torch.randperm(self.n_models)[:self.M].cuda().requires_grad_(False).detach()
+        std = self.offsets["_opacity_offset"][..., sample_model_ids].mean(dim=-1)
+        std = torch.nn.functional.softplus(std)
+        mean = self.offsets["_opacity_offset"][..., sample_model_ids+self.n_models].mean(dim=-1)
+
+        pri_std = torch.nn.functional.softplus(torch.tensor(self.pri_opacity_std).float()).item()
+        pri_mean = self.pri_opacity_mean
+
+        pri_mean, pri_std = pri_mean * torch.ones_like(mean), pri_std * torch.ones_like(std)
+
+        log_sigma_pri, log_sigma_post = torch.log(pri_std), torch.log(std)
+        kl = log_sigma_pri - log_sigma_post + \
+        (torch.exp(log_sigma_post)**2 + (mean-pri_mean)**2)/(2*torch.exp(log_sigma_pri)**2) - 0.5
+        return kl.mean()
+    
     def get_covariance(self, scaling_modifier = 1):
         return self.covariance_activation(self.get_scaling, scaling_modifier, self._rotation)
 
     def oneupSHdegree(self):
         if self.active_sh_degree < self.max_sh_degree:
             self.active_sh_degree += 1
+
+    def init_offset(self): 
+        _xyz_offset = torch.zeros([self._xyz.shape[0], 3, self.n_models*2])
+        _xyz_offset[..., :self.n_models] = self.pri_std
+        _xyz_offset = nn.Parameter(_xyz_offset.requires_grad_(True).cuda())
+
+        _scaling_offset = torch.zeros([self._xyz.shape[0], 3, self.n_models*2])
+
+        _scaling_offset[..., :self.n_models] = torch.log(torch.exp(1/torch.tensor(self.n_models))-1).item()
+        _scaling_offset[..., self.n_models:] = 1-self.pri_width
+        _scaling_offset = nn.Parameter(_scaling_offset.requires_grad_(True).cuda())
+
+        _opacity_offset = torch.zeros([self._xyz.shape[0], 1, self.n_models*2])
+        _opacity_offset[..., :self.n_models] = self.pri_opacity_std
+        _opacity_offset[..., self.n_models:] = self.pri_opacity_mean
+        _opacity_offset = nn.Parameter(_opacity_offset.requires_grad_(True).cuda())
+        offsets = [
+            {"_xyz_offset": _xyz_offset},
+            {"_scaling_offset": _scaling_offset}, 
+            {"_opacity_offset": _opacity_offset}
+        ]
+
+        lr_scales = self.lr_scales
+        self.offsets = {}
+
+        for i in range(len(offsets)): 
+            if lr_scales[i] != 0.0: 
+                self.offsets[list(offsets[i].keys())[0]] = list(offsets[i].values())[0]
+        
+        self.mr_list = torch.zeros([self._xyz.shape[0], 1]).cuda().requires_grad_(False)
+
 
     def create_from_pcd(self, pcd : BasicPointCloud, spatial_lr_scale : float):
         self.spatial_lr_scale = spatial_lr_scale
@@ -152,19 +268,35 @@ class GaussianModel:
         self.denom = torch.zeros((self.get_xyz.shape[0], 1), device="cuda")
 
         l = [
-            {'params': [self._xyz], 'lr': training_args.position_lr_init * self.spatial_lr_scale, "name": "xyz"},
+            {'params': [self._xyz], 'lr': training_args.position_lr_init * self.spatial_lr_scalar, "name": "xyz"},
             {'params': [self._features_dc], 'lr': training_args.feature_lr, "name": "f_dc"},
             {'params': [self._features_rest], 'lr': training_args.feature_lr / 20.0, "name": "f_rest"},
             {'params': [self._opacity], 'lr': training_args.opacity_lr, "name": "opacity"},
             {'params': [self._scaling], 'lr': training_args.scaling_lr, "name": "scaling"},
-            {'params': [self._rotation], 'lr': training_args.rotation_lr, "name": "rotation"}
+            {'params': [self._rotation], 'lr': training_args.rotation_lr, "name": "rotation"},
         ]
 
+        lr_scales = self.lr_scales
+        l_offset = [
+            {'params': [], 'lr': lr_scales[0] * training_args.position_lr_init * self.spatial_lr_scalar, "name": "_xyz_offset"},
+            {'params': [], 'lr': lr_scales[1] * training_args.opacity_lr, "name": "_scaling_offset"},
+            {'params': [], 'lr': lr_scales[2] * training_args.rotation_lr, "name": "_opacity_offset"},
+        ]
+
+        j = 0
+        for i in range(len(l_offset)):
+            if lr_scales[i] != 0.0:
+                l_offset[i]['params'] = [self.offsets[list(self.offsets.keys())[j]]]
+                j += 1
+        l = l + l_offset
+
         self.optimizer = torch.optim.Adam(l, lr=0.0, eps=1e-15)
-        self.xyz_scheduler_args = get_expon_lr_func(lr_init=training_args.position_lr_init*self.spatial_lr_scale,
-                                                    lr_final=training_args.position_lr_final*self.spatial_lr_scale,
-                                                    lr_delay_mult=training_args.position_lr_delay_mult,
-                                                    max_steps=training_args.position_lr_max_steps)
+        self.xyz_scheduler_args = get_expon_lr_func(
+            lr_init=training_args.position_lr_init * self.spatial_lr_scalar,
+            lr_final=training_args.position_lr_final * self.spatial_lr_scalar,
+            lr_delay_mult=training_args.position_lr_delay_mult,
+            max_steps=training_args.position_lr_max_steps
+        )
 
     def update_learning_rate(self, iteration):
         ''' Learning rate scheduling per step '''

@@ -188,3 +188,35 @@ def modified_render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch
             "pixel_gaussian_counter": pixel_gaussian_counter,
             "entropy": out_entropy
             }
+
+def forward_k_times(viewpoint_camera, pc, pipe, bg_color, scaling_modifier=1.0, override_color=None, k=10):
+    rgbs = []
+    depths = []
+
+    for model_id in range(pc.n_models):
+        pc.model_id = model_id
+        out = render(viewpoint_camera, pc, pipe, bg_color, scaling_modifier=1.0, override_color=None)
+        rgb = out['render']
+        depth = out['depth']
+        depths.append(depth)
+        rgbs.append(rgb)
+
+    rgbs = torch.stack(rgbs, dim=0)
+    depths = torch.stack(depths, dim=0)
+    depth_mean = depths.mean(dim=0)
+    depth_var = depths.var(dim=0)
+
+    std = rgbs.std(dim=0)
+    var = rgbs.var(dim=0)
+
+    mean = rgbs.mean(dim=0)
+
+    return {
+        'comp_rgb': mean,
+        'comp_rgbs': rgbs,
+        'comp_var': var,
+        'comp_std': std,
+        'depths': depths,
+        'depth_var': depth_var,
+        'depth_mean': depth_mean,
+    }
