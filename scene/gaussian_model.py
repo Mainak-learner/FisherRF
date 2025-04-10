@@ -56,6 +56,7 @@ class GaussianModel:
         self.optimizer = None
         self.percent_dense = 0
         self.spatial_lr_scalar = 0
+        self.setup_functions()
         
         self.is_variational = is_variational
         if self.is_variational:
