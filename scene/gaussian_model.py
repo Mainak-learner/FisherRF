@@ -77,7 +77,7 @@ class GaussianModel:
             self.offsets = None  # Explicitly set to None when not variational
 
     def capture(self):
-        return (
+        base_params = [
             self.active_sh_degree,
             self._xyz,
             self._features_dc,
@@ -89,22 +89,41 @@ class GaussianModel:
             self.xyz_gradient_accum,
             self.denom,
             self.optimizer.state_dict(),
-            self.spatial_lr_scale,
-        )
+            self.spatial_lr_scale
+        ]
+        if self.is_variational and self.offsets:
+            return base_params + [
+                self.offsets["_xyz_offset"],
+                self.offsets["_scaling_offset"],
+                self.offsets["_opacity_offset"],
+                self.mr_list
+            ]
+        return base_params
     
     def restore(self, model_args, training_args):
         (self.active_sh_degree, 
-        self._xyz, 
-        self._features_dc, 
-        self._features_rest,
-        self._scaling, 
-        self._rotation, 
-        self._opacity,
-        self.max_radii2D, 
-        xyz_gradient_accum, 
-        denom,
-        opt_dict, 
-        self.spatial_lr_scale) = model_args
+         self._xyz, 
+         self._features_dc, 
+         self._features_rest,
+         self._scaling, 
+         self._rotation, 
+         self._opacity,
+         self.max_radii2D, 
+         xyz_gradient_accum, 
+         denom,
+         opt_dict, 
+         self.spatial_lr_scale) = model_args[:12]  # Base parameters
+        
+        if self.is_variational and len(model_args) > 12:
+            # Load variational parameters if present
+            self.offsets["_xyz_offset"] = model_args[12]
+            self.offsets["_scaling_offset"] = model_args[13]
+            self.offsets["_opacity_offset"] = model_args[14]
+            self.mr_list = model_args[15] if len(model_args) > 15 else torch.zeros((self._xyz.shape[0], 1), device="cuda")
+        elif self.is_variational:
+            # Reinitialize if not present in checkpoint
+            self.init_offset()
+        
         self.training_setup(training_args)
         self.xyz_gradient_accum = xyz_gradient_accum
         self.denom = denom
@@ -157,21 +176,16 @@ class GaussianModel:
         return xyz
     
     def compute_xyz(self):
-        if not self.is_variational:
+        if not self.is_variational or self.offsets is None:
             return self._xyz
         sample_model_ids = torch.randperm(self.n_models)[:self.M].cuda().requires_grad_(False).detach()
         xyz = self._xyz
-
         std = self.offsets["_xyz_offset"][..., sample_model_ids].mean(dim=-1)
         std = torch.nn.functional.softplus(std)
-
-        mean = self.offsets["_xyz_offset"][..., sample_model_ids+self.n_models].mean(dim=-1)
-
+        mean = self.offsets["_xyz_offset"][..., sample_model_ids + self.n_models].mean(dim=-1)
         offset = torch.randn_like(xyz).cuda().requires_grad_(True)
-        offset = offset*std+mean
-
-        xyz = xyz + self.mr_list*offset
-        return xyz
+        offset = offset * std + mean
+        return xyz + self.mr_list * offset
 
     def compute_kl_xyz(self): 
         sample_model_ids = torch.randperm(self.n_models)[:self.M].cuda().requires_grad_(False).detach()
@@ -241,35 +255,28 @@ class GaussianModel:
         self.mr_list[transparent_mask] = 0
 
     def init_offset(self): 
-        _xyz_offset = torch.zeros([self._xyz.shape[0], 3, self.n_models*2])
+        if not self.is_variational:
+            return
+        _xyz_offset = torch.zeros([self._xyz.shape[0], 3, self.n_models * 2], device="cuda")
         _xyz_offset[..., :self.n_models] = self.pri_std
-        _xyz_offset = nn.Parameter(_xyz_offset.requires_grad_(True).cuda())
+        _xyz_offset = nn.Parameter(_xyz_offset.requires_grad_(True))
 
-        _scaling_offset = torch.zeros([self._xyz.shape[0], 3, self.n_models*2])
+        _scaling_offset = torch.zeros([self._xyz.shape[0], 3, self.n_models * 2], device="cuda")
+        _scaling_offset[..., :self.n_models] = torch.log(torch.exp(1 / torch.tensor(self.n_models)) - 1).item()
+        _scaling_offset[..., self.n_models:] = 1 - self.pri_width
+        _scaling_offset = nn.Parameter(_scaling_offset.requires_grad_(True))
 
-        _scaling_offset[..., :self.n_models] = torch.log(torch.exp(1/torch.tensor(self.n_models))-1).item()
-        _scaling_offset[..., self.n_models:] = 1-self.pri_width
-        _scaling_offset = nn.Parameter(_scaling_offset.requires_grad_(True).cuda())
-
-        _opacity_offset = torch.zeros([self._xyz.shape[0], 1, self.n_models*2])
+        _opacity_offset = torch.zeros([self._xyz.shape[0], 1, self.n_models * 2], device="cuda")
         _opacity_offset[..., :self.n_models] = self.pri_opacity_std
         _opacity_offset[..., self.n_models:] = self.pri_opacity_mean
-        _opacity_offset = nn.Parameter(_opacity_offset.requires_grad_(True).cuda())
-        offsets = [
-            {"_xyz_offset": _xyz_offset},
-            {"_scaling_offset": _scaling_offset}, 
-            {"_opacity_offset": _opacity_offset}
-        ]
+        _opacity_offset = nn.Parameter(_opacity_offset.requires_grad_(True))
 
-        lr_scales = self.lr_scales
-        self.offsets = {}
-
-        for i in range(len(offsets)): 
-            if lr_scales[i] != 0.0: 
-                self.offsets[list(offsets[i].keys())[0]] = list(offsets[i].values())[0]
-        
-        self.mr_list = torch.zeros([self._xyz.shape[0], 1]).cuda().requires_grad_(False)
-
+        self.offsets = {
+            "_xyz_offset": _xyz_offset,
+            "_scaling_offset": _scaling_offset,
+            "_opacity_offset": _opacity_offset
+        }
+        self.mr_list = torch.zeros([self._xyz.shape[0], 1], device="cuda").requires_grad_(False)
 
     def create_from_pcd(self, pcd : BasicPointCloud, spatial_lr_scale : float):
         self.spatial_lr_scale = spatial_lr_scale
@@ -301,11 +308,16 @@ class GaussianModel:
 
     def training_setup(self, training_args):
         self.percent_dense = training_args.percent_dense
-        self.xyz_gradient_accum = torch.zeros((self.get_xyz.shape[0], 1), device="cuda")
-        self.denom = torch.zeros((self.get_xyz.shape[0], 1), device="cuda")
+        # Only initialize offsets if not already set (e.g., from restore)
+        if self.is_variational and not self.offsets:
+            self.init_offset()
+        
+        self.xyz_gradient_accum = torch.zeros((self._xyz.shape[0], 1), device="cuda")
+        self.denom = torch.zeros((self._xyz.shape[0], 1), device="cuda")
+        self.max_radii2D = torch.zeros((self._xyz.shape[0]), device="cuda")
 
         l = [
-            {'params': [self._xyz], 'lr': training_args.position_lr_init * self.spatial_lr_scalar, "name": "xyz"},
+            {'params': [self._xyz], 'lr': training_args.position_lr_init * self.spatial_lr_scale, "name": "xyz"},
             {'params': [self._features_dc], 'lr': training_args.feature_lr, "name": "f_dc"},
             {'params': [self._features_rest], 'lr': training_args.feature_lr / 20.0, "name": "f_rest"},
             {'params': [self._opacity], 'lr': training_args.opacity_lr, "name": "opacity"},
@@ -313,28 +325,23 @@ class GaussianModel:
             {'params': [self._rotation], 'lr': training_args.rotation_lr, "name": "rotation"},
         ]
 
-        lr_scales = self.lr_scales
-        l_offset = [
-            {'params': [], 'lr': lr_scales[0] * training_args.position_lr_init * self.spatial_lr_scalar, "name": "_xyz_offset"},
-            {'params': [], 'lr': lr_scales[1] * training_args.opacity_lr, "name": "_scaling_offset"},
-            {'params': [], 'lr': lr_scales[2] * training_args.rotation_lr, "name": "_opacity_offset"},
-        ]
-
-        j = 0
-        for i in range(len(l_offset)):
-            if lr_scales[i] != 0.0:
-                l_offset[i]['params'] = [self.offsets[list(self.offsets.keys())[j]]]
-                j += 1
-        l = l + l_offset
+        if self.is_variational and self.offsets:
+            lr_scales = self.lr_scales
+            l_offset = [
+                {'params': [self.offsets["_xyz_offset"]], 'lr': lr_scales[0] * training_args.position_lr_init * self.spatial_lr_scale, "name": "_xyz_offset"},
+                {'params': [self.offsets["_scaling_offset"]], 'lr': lr_scales[1] * training_args.opacity_lr, "name": "_scaling_offset"},
+                {'params': [self.offsets["_opacity_offset"]], 'lr': lr_scales[2] * training_args.rotation_lr, "name": "_opacity_offset"},
+            ]
+            l.extend(l_offset)
 
         self.optimizer = torch.optim.Adam(l, lr=0.0, eps=1e-15)
         self.xyz_scheduler_args = get_expon_lr_func(
-            lr_init=training_args.position_lr_init * self.spatial_lr_scalar,
-            lr_final=training_args.position_lr_final * self.spatial_lr_scalar,
+            lr_init=training_args.position_lr_init * self.spatial_lr_scale,
+            lr_final=training_args.position_lr_final * self.spatial_lr_scale,
             lr_delay_mult=training_args.position_lr_delay_mult,
             max_steps=training_args.position_lr_max_steps
         )
-
+        
     def update_learning_rate(self, iteration):
         ''' Learning rate scheduling per step '''
         for param_group in self.optimizer.param_groups:

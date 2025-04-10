@@ -45,12 +45,11 @@ def save_checkpoint(gaussians, iteration, scene, base_iter=0, save_path=None, sa
 
 def load_checkpoint(ckpt_path: str, gaussians, scene, opt, ignore_train_idxs=False):
     add_safe_globals([scalar, dtype, Float32DType])
-    ckpt_dict = torch.load(ckpt_path, weights_only=True)
+    ckpt_dict = torch.load(ckpt_path)
     (model_params, first_iter, train_idxs) = ckpt_dict["model_params"], ckpt_dict["first_iter"], ckpt_dict["train_idx"]
     gaussians.restore(model_params, opt)
     if not ignore_train_idxs:
         scene.train_idxs = train_idxs
-
     base_iter = ckpt_dict.get("base_iter", 0)
     return first_iter, base_iter
 
@@ -60,7 +59,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     base_iter = 0
     tb_writer = prepare_output_and_logger(dataset)
     is_variational = args.method == "var_uncertainty"
-    gaussians = GaussianModel(dataset, is_variational)  # Updated model with variational params
+    gaussians = GaussianModel(dataset, is_variational=is_variational)
     scene = Scene(dataset, gaussians)
     gaussians.training_setup(opt)
 
@@ -75,13 +74,13 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     active_method = methods_dict[args.method](args)
 
     init_ckpt_path = f"{args.model_path}/init.ckpt"
-    if checkpoint: # this is to continue training in SLURM after requeue
+    if checkpoint:
         if os.path.exists(checkpoint):
             first_iter, base_iter = load_checkpoint(checkpoint, gaussians, scene, opt)
         else:
             print(f"[WARNING] checkpoint {checkpoint} doesn't exist, training from scratch")
-
-    if first_iter == 0: # maybe init_ckpt has been save if preempted
+    
+    if first_iter == 0:
         save_checkpoint(gaussians, first_iter, scene, base_iter, save_path=init_ckpt_path, save_last=False)
 
     bg_color = [1, 1, 1] if dataset.white_background else [0, 0, 0]
@@ -133,10 +132,11 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             print(f"ITER {iteration}: selected views: {selected_views}")
             scene.train_idxs.extend(selected_views)
             print(f"ITER {iteration}: training views after selection: {scene.train_idxs}")
-
-            gaussians.optimizer.zero_grad(set_to_none = True)
-
+            gaussians.optimizer.zero_grad(set_to_none=True)
             first_iter, _ = load_checkpoint(init_ckpt_path, gaussians, scene, opt, ignore_train_idxs=True)
+
+            if is_variational:
+                gaussians.init_offset()
             base_iter = iteration - 1
 
         iter_start.record()
