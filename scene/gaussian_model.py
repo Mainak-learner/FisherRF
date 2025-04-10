@@ -70,6 +70,8 @@ class GaussianModel:
             self.model_id = None
             self.offsets = {}
             self.mr_list = None
+        else:
+            self.offsets = None  # Explicitly set to None when not variational
 
     def capture(self):
         return (
@@ -279,6 +281,9 @@ class GaussianModel:
         self._scaling = nn.Parameter(scales.requires_grad_(True))
         self._rotation = nn.Parameter(rots.requires_grad_(True))
         self._opacity = nn.Parameter(opacities.requires_grad_(True))
+        # Initialize variational offsets only if needed
+        if self.is_variational:
+            self.init_offset()
         self.max_radii2D = torch.zeros((self.get_xyz.shape[0]), device="cuda")
 
     def training_setup(self, training_args):
