@@ -41,7 +41,7 @@ class GaussianModel:
         self.rotation_activation = torch.nn.functional.normalize
 
 
-    def __init__(self, args=None):  # Modified to accept args instead of sh_degree
+    def __init__(self, args=None, is_variational=False):  # Modified to accept args instead of sh_degree
         self.active_sh_degree = 0
         self.max_sh_degree = 3  # Default from FisherRF
         self._xyz = torch.empty(0)
@@ -57,16 +57,19 @@ class GaussianModel:
         self.percent_dense = 0
         self.spatial_lr_scalar = 0
         
-        # Variational parameters from variational-3dgs
-        self.n_models = 10  # Number of models for uncertainty
-        self.M = 5  # Number of samples for inference
-        self.pri_width = 0.05
-        self.pri_std = 0.1
-        self.pri_opacity_mean = 0.5
-        self.pri_opacity_std = 0.05
-        self.tmp = 1.0
-        self.lr_scales = [1.0, 1.0, 1.0]  # Learning rate scales for offsets
-        self.model_id = None  # Current model ID for rendering
+        self.is_variational = is_variational
+        if self.is_variational:
+            self.n_models = 10
+            self.M = 5
+            self.pri_width = 0.05
+            self.pri_std = 0.1
+            self.pri_opacity_mean = 0.5
+            self.pri_opacity_std = 0.05
+            self.tmp = 1.0
+            self.lr_scales = [1.0, 1.0, 1.0]
+            self.model_id = None
+            self.offsets = {}
+            self.mr_list = None
 
     def capture(self):
         return (
@@ -104,9 +107,12 @@ class GaussianModel:
 
     @property
     def get_scaling(self):
-        return self.scaling_activation(self._scaling)
+        scale = self.compute_scal()
+        return scale
     
-    def compute_scal(self): 
+    def compute_scal(self):
+        if not self.is_variational:
+            return self.scaling_activation(self._scaling) 
         scal = self._scaling
         sample_model_ids = torch.randperm(self.n_models)[:self.M].cuda().requires_grad_(False).detach()
 
@@ -142,9 +148,12 @@ class GaussianModel:
     
     @property
     def get_xyz(self):
-        return self._xyz
+        xyz = self.compute_xyz()
+        return xyz
     
     def compute_xyz(self):
+        if not self.is_variational:
+            return self._xyz
         sample_model_ids = torch.randperm(self.n_models)[:self.M].cuda().requires_grad_(False).detach()
         xyz = self._xyz
 
@@ -181,7 +190,17 @@ class GaussianModel:
     
     @property
     def get_opacity(self):
-        return self.opacity_activation(self._opacity)
+        if not self.is_variational:
+            return self.opacity_activation(self._opacity)
+        opacity = self.opacity_activation(self._opacity)
+        sample_model_ids = torch.randperm(self.n_models)[:self.M].cuda().requires_grad_(False).detach()
+        std = self.offsets["_opacity_offset"][..., sample_model_ids].mean(dim=-1)
+        std = torch.nn.functional.softplus(std)
+        mean = self.offsets["_opacity_offset"][..., sample_model_ids + self.n_models].mean(dim=-1)
+        p_logit = (std * torch.randn_like(opacity).cuda().requires_grad_(True) + mean)
+        offset_opc = torch.sigmoid(p_logit / self.tmp)
+        offset_opc = self.mr_list * offset_opc + (1 - self.mr_list) * torch.ones_like(offset_opc).cuda().requires_grad_(True)
+        return opacity * offset_opc
     
     def compute_kl_opacity(self):
         sample_model_ids = torch.randperm(self.n_models)[:self.M].cuda().requires_grad_(False).detach()
