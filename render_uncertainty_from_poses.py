@@ -152,11 +152,14 @@ if __name__ == "__main__":
     pipe = pp.extract(args)
     gaussians, scene = load_model(args.checkpoint, dataset, opt)
 
+    # Precompute H_per_gaussian using training and testing views
+    H_per_gaussian = precompute_H_per_gaussian(gaussians, scene, pipe, background)
+
     with open(args.poses_file, "r") as f:
         poses = json.load(f)
 
     bg_color = [1, 1, 1] if dataset.white_background else [0, 0, 0]
     background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
 
-    render_uncertainty_from_poses(poses, gaussians, pipe, background, args.output_dir)
+    render_uncertainty_from_poses(poses, gaussians, pipe, background, args.output_dir, H_per_gaussian)
     print(f"Uncertainty renders and plots saved to {args.output_dir}")
