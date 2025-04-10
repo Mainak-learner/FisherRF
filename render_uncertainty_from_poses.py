@@ -122,7 +122,6 @@ if __name__ == "__main__":
     parser.add_argument("--output_dir", type=str, default="./uncertainty_renders", help="Output directory for renders")
 
     args = parser.parse_args()
-    safe_state(args.quiet)
 
     dataset = lp.extract(args)
     opt = op.extract(args)
