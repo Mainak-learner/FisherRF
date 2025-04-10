@@ -1,4 +1,5 @@
 import torch
+from tqdm import tqdm
 from gaussian_renderer import forward_k_times
 
 class VarUncertaintySelector:
@@ -6,13 +7,13 @@ class VarUncertaintySelector:
         self.args = args
 
     def nbvs(self, gaussians, scene, num_views, pipe, background, exit_func=None):
-        candidate_views = scene.getTrainCameras()  # All possible views
+        candidate_cameras = scene.getCandidateCameras()
         if scene.candidate_views_filter:
             candidate_views = [cam for i, cam in enumerate(candidate_views) if i in scene.candidate_views_filter]
 
         # Compute uncertainty for each candidate view
         uncertainties = []
-        for viewpoint in candidate_views:
+        for viewpoint in tqdm(candidate_cameras, desc="Calculating variational uncertianty for candidate views"):
             if exit_func and exit_func():
                 raise RuntimeError("Early exit triggered by cluster manager")
             
