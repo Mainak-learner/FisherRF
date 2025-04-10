@@ -53,6 +53,9 @@ class ModelParams(ParamGroup):
         self._resolution = -1
         self._white_background = False
         self.data_device = "cuda"
+        self.spawn_interval = 1000
+        self.spawn_percent_base = 0.01
+        self.spawn_min_opacity = 0.0005
         self.eval = False
         super().__init__(parser, "Loading Parameters", sentinel)
 

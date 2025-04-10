@@ -56,6 +56,10 @@ class GaussianModel:
         self.optimizer = None
         self.percent_dense = 0
         self.spatial_lr_scalar = 0
+        if self.is_variational:
+            # ... (existing variational init)
+            self.spawn_percent_base = 0.01
+            self.spawn_min_opacity = 0.0005
         self.setup_functions()
         
         self.is_variational = is_variational
@@ -227,6 +231,16 @@ class GaussianModel:
     def oneupSHdegree(self):
         if self.active_sh_degree < self.max_sh_degree:
             self.active_sh_degree += 1
+        
+    def spawn(self, extent):
+        if not self.is_variational:
+            return
+        percent_base = self.spawn_percent_base  # Add to __init__ if missing: self.spawn_percent_base = 0.01
+        min_opacity = self.spawn_min_opacity   # Add to __init__ if missing: self.spawn_min_opacity = 0.0005
+        mr_mask = torch.norm(self.get_scaling, dim=1) > percent_base * extent
+        self.mr_list = mr_mask.int()[..., None]
+        transparent_mask = (self.get_opacity < min_opacity)[:, 0]
+        self.mr_list[transparent_mask] = 0
 
     def init_offset(self): 
         _xyz_offset = torch.zeros([self._xyz.shape[0], 3, self.n_models*2])
