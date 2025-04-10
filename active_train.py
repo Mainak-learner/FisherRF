@@ -18,7 +18,6 @@ from active import methods_dict
 from torch.serialization import add_safe_globals
 from numpy._core.multiarray import scalar
 from numpy import dtype
-from utils.image_utils import nll_kernel_density
 from numpy.dtypes import Float32DType
 import wandb
 try:
