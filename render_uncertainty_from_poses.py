@@ -53,6 +53,8 @@ def render_uncertainty_from_poses(poses, gaussians, pipe, background, output_dir
         variational_pkg = forward_k_times(viewpoint, gaussians, pipe, background, k=gaussians.n_models)
         var_rgb = variational_pkg["comp_rgb"].detach()  # Detach before numpy
         var_uncertainty = variational_pkg["comp_std"].detach()  # Detach before numpy
+        # Convert to single-channel uncertainty (mean across RGB)
+        var_uncertainty = var_uncertainty.mean(dim=0, keepdim=True)  # Shape: (1, height, width)
 
         # FisherRF Uncertainty
         render_pkg = modified_render(viewpoint, gaussians, pipe, background)
@@ -80,9 +82,9 @@ def render_uncertainty_from_poses(poses, gaussians, pipe, background, output_dir
         fisher_uncertainty_norm = (fisher_uncertainty - fisher_min) / (fisher_max - fisher_min + 1e-6)
 
         # Convert tensors to numpy for plotting
-        render_img_np = var_rgb.cpu().numpy().transpose(1, 2, 0)
-        fisher_unc_np = fisher_uncertainty_norm.cpu().numpy()
-        var_unc_np = var_uncertainty_norm.cpu().numpy()
+        render_img_np = var_rgb.cpu().numpy().transpose(1, 2, 0)  # RGB image: (height, width, 3)
+        fisher_unc_np = fisher_uncertainty_norm.cpu().numpy()  # Single-channel: (height, width)
+        var_unc_np = var_uncertainty_norm.squeeze(0).cpu().numpy()  # Single-channel: (height, width)
 
         # Plotting (3 subplots per row)
         plt.subplot(len(poses), 3, idx * 3 + 1)
