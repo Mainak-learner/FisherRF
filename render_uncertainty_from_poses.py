@@ -9,7 +9,7 @@ from argparse import ArgumentParser
 from scene.cameras import Camera
 import torchvision
 import json
-from einops import reduce
+from einops import reduce, repeat
 import matplotlib.pyplot as plt
 
 # Define load_model function
@@ -29,7 +29,30 @@ def load_model(checkpoint_path, dataset, opt):
         raise FileNotFoundError(f"Checkpoint not found at {checkpoint_path}")
     return gaussians, scene
 
-def render_uncertainty_from_poses(poses, gaussians, pipe, background, output_dir):
+def precompute_H_per_gaussian(gaussians, scene, pipeline, background):
+    # Use train and test views to compute H_per_gaussian
+    train_views = scene.getTrainCameras()
+    test_views = scene.getTestCameras()
+    all_views = train_views + test_views
+
+    params = [gaussians._xyz, gaussians._features_dc, gaussians._features_rest, gaussians._scaling, gaussians._opacity]
+    params = [p.requires_grad_(True) for p in params if p.grad is None or not any(k in ["rotation"] for k in ["rotation"])]
+    optim = torch.optim.SGD(params, 0.)
+    gaussians.optimizer = optim
+    device = params[0].device
+
+    H_per_gaussian = torch.zeros(params[0].shape[0], device=device, dtype=params[0].dtype)
+
+    for view in tqdm(all_views, desc="Precomputing H_per_gaussian"):
+        render_pkg = modified_render(view, gaussians, pipeline, background)
+        pred_img = render_pkg["render"]
+        pred_img.backward(gradient=torch.ones_like(pred_img))
+        H_per_gaussian += sum([reduce(p.grad.detach(), "n ... -> n", "sum") for p in params])
+        optim.zero_grad(set_to_none=True)
+
+    return H_per_gaussian.detach()
+
+def render_uncertainty_from_poses(poses, gaussians, pipe, background, output_dir, H_per_gaussian):
     os.makedirs(output_dir, exist_ok=True)
     plt.figure(figsize=(15, 5 * len(poses)))  # Adjusted for 3 columns
 
@@ -53,24 +76,21 @@ def render_uncertainty_from_poses(poses, gaussians, pipe, background, output_dir
         variational_pkg = forward_k_times(viewpoint, gaussians, pipe, background, k=gaussians.n_models)
         var_rgb = variational_pkg["comp_rgb"].detach()  # Detach before numpy
         var_uncertainty = variational_pkg["comp_std"].detach()  # Detach before numpy
-        # Convert to single-channel uncertainty (mean across RGB)
+        # Convert to single-channel uncertainty
         var_uncertainty = var_uncertainty.mean(dim=0, keepdim=True)  # Shape: (1, height, width)
 
-        # FisherRF Uncertainty
-        render_pkg = modified_render(viewpoint, gaussians, pipe, background)
-        fisher_rgb = render_pkg["render"].detach()  # Detach before numpy
-        depth = render_pkg["depth"]
+        # FisherRF Uncertainty with precomputed H_per_gaussian
         xyz = gaussians._xyz
         to_homo = lambda x: torch.cat([x, torch.ones(x.shape[:-1] + (1,), dtype=x.dtype, device=x.device)], dim=-1)
         pts3d_homo = to_homo(xyz)
         pts3d_cam = pts3d_homo @ viewpoint.world_view_transform
         gaussian_depths = pts3d_cam[:, 2, None].clamp(min=0)
 
-        # Compute FisherRF uncertainty with depth normalization
-        hessian_color = torch.ones_like(xyz)  # Placeholder; adjust if needed
+        hessian_color = repeat(H_per_gaussian, "n -> n c", c=3)
         cur_hessian_color = hessian_color * gaussian_depths
         fisher_render_pkg = render(viewpoint, gaussians, pipe, background, override_color=cur_hessian_color)
         fisher_uncertainty = reduce(fisher_render_pkg["render"], "c h w -> h w", "mean").detach()  # Detach before numpy
+        render_pkg = modified_render(viewpoint, gaussians, pipe, background)
         pixel_gaussian_counter = render_pkg["pixel_gaussian_counter"]
         fisher_uncertainty = torch.log(fisher_uncertainty / pixel_gaussian_counter.clamp(min=1e-6))
 
@@ -81,10 +101,14 @@ def render_uncertainty_from_poses(poses, gaussians, pipe, background, output_dir
         fisher_min, fisher_max = fisher_uncertainty.min(), fisher_uncertainty.max()
         fisher_uncertainty_norm = (fisher_uncertainty - fisher_min) / (fisher_max - fisher_min + 1e-6)
 
+        # Ensure both uncertainties have the same number of dimensions
+        var_uncertainty_norm = var_uncertainty_norm.squeeze(0)  # Remove singleton channel dimension
+        fisher_uncertainty_norm = fisher_uncertainty_norm.unsqueeze(0)  # Add singleton channel dimension
+
         # Convert tensors to numpy for plotting
         render_img_np = var_rgb.cpu().numpy().transpose(1, 2, 0)  # RGB image: (height, width, 3)
-        fisher_unc_np = fisher_uncertainty_norm.cpu().numpy()  # Single-channel: (height, width)
-        var_unc_np = var_uncertainty_norm.squeeze(0).cpu().numpy()  # Single-channel: (height, width)
+        fisher_unc_np = fisher_uncertainty_norm.squeeze(0).cpu().numpy()  # Single-channel: (height, width)
+        var_unc_np = var_uncertainty_norm.cpu().numpy()  # Single-channel: (height, width)
 
         # Plotting (3 subplots per row)
         plt.subplot(len(poses), 3, idx * 3 + 1)
@@ -103,10 +127,10 @@ def render_uncertainty_from_poses(poses, gaussians, pipe, background, output_dir
         plt.axis('off')
 
         # Save images
-        # side_by_side_rgb = torch.cat([var_rgb, fisher_rgb], dim=2)
-        # side_by_side_unc = torch.cat([var_uncertainty_norm, fisher_uncertainty_norm], dim=1)
-        # torchvision.utils.save_image(side_by_side_rgb, os.path.join(output_dir, f"rgb_{idx:03d}.png"))
-        # torchvision.utils.save_image(side_by_side_unc, os.path.join(output_dir, f"uncertainty_{idx:03d}.png"))
+        side_by_side_rgb = torch.cat([var_rgb, fisher_rgb], dim=2)  # Concatenate along width
+        side_by_side_unc = torch.cat([var_uncertainty_norm, fisher_uncertainty_norm], dim=2)  # Concatenate along width
+        torchvision.utils.save_image(side_by_side_rgb, os.path.join(output_dir, f"rgb_{idx:03d}.png"))
+        torchvision.utils.save_image(side_by_side_unc, os.path.join(output_dir, f"uncertainty_{idx:03d}.png"))
 
     plt.tight_layout()
     plt.savefig(os.path.join(output_dir, "uncertainty_plots.png"))
