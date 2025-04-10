@@ -37,25 +37,26 @@ def render_uncertainty_from_poses(poses, gaussians, pipe, background, output_dir
         # Convert pose to Camera object with image=None
         viewpoint = Camera(
             colmap_id=idx,
-            R=np.array(pose["R"]),
-            T=np.array(pose["T"]),
+            R=np.array(pose["R"]),  # Should be 3x3
+            T=np.array(pose["T"]).reshape(3, 1),  # Ensure 3x1, will be squeezed in Camera
             FoVx=pose["FoVx"],
             FoVy=pose["FoVy"],
-            image=None,  # Explicitly None for novel poses
+            image=None,
             gt_alpha_mask=None,
             image_name=f"pose_{idx:03d}",
             uid=idx,
             data_device="cuda"
         )
+        print(f"Viewpoint {idx}: R shape {viewpoint.R.shape}, T shape {viewpoint.T.shape}")  # Debug print
 
         # Variational Uncertainty
         variational_pkg = forward_k_times(viewpoint, gaussians, pipe, background, k=gaussians.n_models)
-        var_rgb = variational_pkg["comp_rgb"]
-        var_uncertainty = variational_pkg["comp_std"]  # Standard deviation
+        var_rgb = variational_pkg["comp_rgb"].detach()  # Detach before numpy
+        var_uncertainty = variational_pkg["comp_std"].detach()  # Detach before numpy
 
         # FisherRF Uncertainty
         render_pkg = modified_render(viewpoint, gaussians, pipe, background)
-        fisher_rgb = render_pkg["render"]
+        fisher_rgb = render_pkg["render"].detach()  # Detach before numpy
         depth = render_pkg["depth"]
         xyz = gaussians._xyz
         to_homo = lambda x: torch.cat([x, torch.ones(x.shape[:-1] + (1,), dtype=x.dtype, device=x.device)], dim=-1)
@@ -67,7 +68,7 @@ def render_uncertainty_from_poses(poses, gaussians, pipe, background, output_dir
         hessian_color = torch.ones_like(xyz)  # Placeholder; adjust if needed
         cur_hessian_color = hessian_color * gaussian_depths
         fisher_render_pkg = render(viewpoint, gaussians, pipe, background, override_color=cur_hessian_color)
-        fisher_uncertainty = reduce(fisher_render_pkg["render"], "c h w -> h w", "mean")
+        fisher_uncertainty = reduce(fisher_render_pkg["render"], "c h w -> h w", "mean").detach()  # Detach before numpy
         pixel_gaussian_counter = render_pkg["pixel_gaussian_counter"]
         fisher_uncertainty = torch.log(fisher_uncertainty / pixel_gaussian_counter.clamp(min=1e-6))
 
