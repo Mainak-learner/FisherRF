@@ -9,6 +9,11 @@ from argparse import ArgumentParser
 from scene.cameras import Camera
 import torchvision
 import json
+from gaussian_renderer import GaussianModel
+import numpy as np
+from scene.cameras import Camera
+from gaussian_renderer import modified_render
+from einops import reduce
 import matplotlib.pyplot as plt
 
 def load_model(checkpoint_path, dataset, opt):
@@ -46,7 +51,7 @@ def render_uncertainty_from_poses(poses, gaussians, pipe, background, output_dir
         var_uncertainty = variational_pkg["comp_std"]  # Standard deviation
 
         # FisherRF Uncertainty
-        render_pkg = render(viewpoint, gaussians, pipe, background)
+        render_pkg = modified_render(viewpoint, gaussians, pipe, background)
         fisher_rgb = render_pkg["render"]
         depth = render_pkg["depth"]
         xyz = gaussians._xyz
