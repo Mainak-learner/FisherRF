@@ -18,6 +18,7 @@ from active import methods_dict
 from torch.serialization import add_safe_globals
 from numpy._core.multiarray import scalar
 from numpy import dtype
+from utils.image_utils import nll_kernel_density
 from numpy.dtypes import Float32DType
 import wandb
 try:
@@ -59,9 +60,13 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     first_iter = 0
     base_iter = 0
     tb_writer = prepare_output_and_logger(dataset)
-    gaussians = GaussianModel(dataset.sh_degree)
+    is_variational = args.method == "var_uncertainty"
+    gaussians = GaussianModel(dataset)  # Updated model with variational params
     scene = Scene(dataset, gaussians)
     gaussians.training_setup(opt)
+
+    if is_variational:
+        gaussians.init_offset()  # Initialize variational offsets only if needed
     
     # Active View Selection
     schema = schema_dict[args.schema](dataset_size=len(scene.getTrainCameras()), scene=scene)
@@ -150,6 +155,8 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         # Render
         if (iteration - 1) == debug_from:
             pipe.debug = True
+        if is_variational:
+            gaussians.model_id = torch.randint(0, gaussians.n_models, (1,)).item()
         render_pkg = render(viewpoint_cam, gaussians, pipe, background)
         image, viewspace_point_tensor, visibility_filter, radii = render_pkg["render"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]
 
@@ -157,6 +164,14 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         gt_image = viewpoint_cam.original_image.cuda()
         Ll1 = l1_loss(image, gt_image)
         loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image))
+        
+        # Add KL losses only if variational
+        if is_variational:
+            loss_kl_scal = gaussians.compute_kl_uniform_scal()
+            loss_kl_xyz = gaussians.compute_kl_xyz()
+            loss_kl_opacity = gaussians.compute_kl_opacity()
+            loss += 1.0 * (loss_kl_scal + loss_kl_xyz + loss_kl_opacity)
+
         loss.backward()
 
         iter_end.record()
@@ -194,6 +209,8 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
 
                 if cur_iter > opt.densify_from_iter and cur_iter % opt.densification_interval == 0:
                     size_threshold = 20 if cur_iter > opt.opacity_reset_interval else None
+                    if is_variational and cur_iter % dataset.spawn_interval == 0:
+                        gaussians.spawn(scene.cameras_extent)
                     gaussians.densify_and_prune(opt.densify_grad_threshold, args.min_opacity, scene.cameras_extent, size_threshold)
                 
                 if cur_iter % opt.opacity_reset_interval == 0 or (dataset.white_background and cur_iter == opt.densify_from_iter):
@@ -321,8 +338,7 @@ if __name__ == "__main__":
     parser.add_argument("--distance_sigma", type=float, default=50.0, help="Controls the influence of distance in view selection")
     parser.add_argument("--use_scheduler", type=bool, default=False, help="Controls whether distance_sigma scheduler should be used.")
     # Flags for view selections
-    parser.add_argument("--method", type=str, default="rand", choices=["rand", "entropy", "H_reg"])
-    parser.add_argument("--schema", type=str, default="all")
+    parser.add_argument("--method", type=str, default="rand", choices=["rand", "entropy", "H_reg", "var_uncertainty"])
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--reg_lambda", type=float, default=1e-6)
     parser.add_argument("--I_test", action="store_true", help="Use I test to get the selection base")
