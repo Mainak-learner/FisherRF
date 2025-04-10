@@ -195,7 +195,7 @@ def forward_k_times(viewpoint_camera, pc, pipe, bg_color, scaling_modifier=1.0, 
 
     for model_id in range(pc.n_models):
         pc.model_id = model_id
-        out = render(viewpoint_camera, pc, pipe, bg_color, scaling_modifier=1.0, override_color=None)
+        out = modified_render(viewpoint_camera, pc, pipe, bg_color, scaling_modifier=1.0, override_color=None)
         rgb = out['render']
         depth = out['depth']
         depths.append(depth)
