@@ -103,10 +103,10 @@ def render_uncertainty_from_poses(poses, gaussians, pipe, background, output_dir
         plt.axis('off')
 
         # Save images
-        side_by_side_rgb = torch.cat([var_rgb, fisher_rgb], dim=2)
-        side_by_side_unc = torch.cat([var_uncertainty_norm, fisher_uncertainty_norm], dim=1)
-        torchvision.utils.save_image(side_by_side_rgb, os.path.join(output_dir, f"rgb_{idx:03d}.png"))
-        torchvision.utils.save_image(side_by_side_unc, os.path.join(output_dir, f"uncertainty_{idx:03d}.png"))
+        # side_by_side_rgb = torch.cat([var_rgb, fisher_rgb], dim=2)
+        # side_by_side_unc = torch.cat([var_uncertainty_norm, fisher_uncertainty_norm], dim=1)
+        # torchvision.utils.save_image(side_by_side_rgb, os.path.join(output_dir, f"rgb_{idx:03d}.png"))
+        # torchvision.utils.save_image(side_by_side_unc, os.path.join(output_dir, f"uncertainty_{idx:03d}.png"))
 
     plt.tight_layout()
     plt.savefig(os.path.join(output_dir, "uncertainty_plots.png"))
