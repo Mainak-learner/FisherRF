@@ -54,9 +54,10 @@ class Camera(nn.Module):
         self.trans = torch.from_numpy(trans).float().to(self.data_device)
         self.scale = scale
 
-        # Compute world_view_transform using getWorld2View2
+        # Convert T to 1D vector for getWorld2View2
+        T_1d = self.T.squeeze(1).cpu().numpy()  # Shape (3,) from (3, 1)
         self.world_view_transform = torch.tensor(
-            getWorld2View2(self.R.cpu().numpy(), self.T.cpu().numpy(), self.trans.cpu().numpy(), self.scale)
+            getWorld2View2(self.R.cpu().numpy(), T_1d, self.trans.cpu().numpy(), self.scale)
         ).transpose(0, 1).to(self.data_device)
 
         self.projection_matrix = getProjectionMatrix(
