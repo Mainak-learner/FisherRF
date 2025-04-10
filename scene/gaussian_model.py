@@ -468,8 +468,12 @@ class GaussianModel:
         self._scaling = optimizable_tensors["scaling"]
         self._rotation = optimizable_tensors["rotation"]
 
-        self.xyz_gradient_accum = self.xyz_gradient_accum[valid_points_mask]
+        if self.is_variational:
+            for name in self.offsets.keys():
+                self.offsets[name] = optimizable_tensors[name] if name in optimizable_tensors else self.offsets[name][valid_points_mask, ...]
+            self.mr_list = self.mr_list[valid_points_mask]
 
+        self.xyz_gradient_accum = self.xyz_gradient_accum[valid_points_mask]
         self.denom = self.denom[valid_points_mask]
         self.max_radii2D = self.max_radii2D[valid_points_mask]
 
@@ -503,7 +507,7 @@ class GaussianModel:
             "rotation": new_rotation
         }
         if self.is_variational and new_offsets is not None:
-            d.update(new_offsets)  # Add variational offsets only if provided and variational
+            d.update(new_offsets)
 
         optimizable_tensors = self.cat_tensors_to_optimizer(d)
         self._xyz = optimizable_tensors["xyz"]
@@ -517,9 +521,9 @@ class GaussianModel:
             for name in self.offsets.keys():
                 self.offsets[name] = optimizable_tensors[name]
 
-        self.xyz_gradient_accum = torch.zeros((self.get_xyz.shape[0], 1), device="cuda")
-        self.denom = torch.zeros((self.get_xyz.shape[0], 1), device="cuda")
-        self.max_radii2D = torch.zeros((self.get_xyz.shape[0]), device="cuda")
+        self.xyz_gradient_accum = torch.zeros((self._xyz.shape[0], 1), device="cuda")
+        self.denom = torch.zeros((self._xyz.shape[0], 1), device="cuda")
+        self.max_radii2D = torch.zeros((self._xyz.shape[0]), device="cuda")
 
     def densify_and_split(self, grads, grad_threshold, scene_extent, N=2):
         n_init_points = self.get_xyz.shape[0]
@@ -548,13 +552,12 @@ class GaussianModel:
                 new_shape = [1 for _ in range(n_dim)]
                 new_shape[0] = N
                 new_offsets[name] = self.offsets[name][selected_pts_mask, ...].repeat(*new_shape)
-            self.mr_list = torch.cat([self.mr_list, torch.ones_like(self.mr_list[selected_pts_mask].repeat(N, 1))], dim=0)
+            new_mr_list = torch.ones_like(self.mr_list[selected_pts_mask].repeat(N, 1))
+            self.mr_list = torch.cat([self.mr_list, new_mr_list], dim=0)
 
         self.densification_postfix(new_xyz, new_features_dc, new_features_rest, new_opacity, new_scaling, new_rotation, new_offsets)
 
         prune_filter = torch.cat([selected_pts_mask, torch.zeros(N * selected_pts_mask.sum(), device="cuda", dtype=bool)])
-        if self.is_variational:
-            self.mr_list = self.mr_list[~prune_filter]
         self.prune_points(prune_filter)
 
     def densify_and_clone(self, grads, grad_threshold, scene_extent):
@@ -589,8 +592,6 @@ class GaussianModel:
             big_points_ws = self.get_scaling.max(dim=1).values > 0.1 * extent
             prune_mask = torch.logical_or(torch.logical_or(prune_mask, big_points_vs), big_points_ws)
 
-        if self.is_variational:
-            self.mr_list = self.mr_list[~prune_mask]
         self.prune_points(prune_mask)
         torch.cuda.empty_cache()
 
