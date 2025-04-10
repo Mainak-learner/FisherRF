@@ -16,15 +16,15 @@ from gaussian_renderer import modified_render
 from einops import reduce
 import matplotlib.pyplot as plt
 
-def load_model(checkpoint_path, dataset, opt):
-    gaussians = GaussianModel(dataset, is_variational=True)
-    scene = Scene(dataset, gaussians)
-    if os.path.exists(checkpoint_path):
-        ckpt_dict = torch.load(checkpoint_path)
-        gaussians.restore(ckpt_dict["model_params"], opt)
-    else:
-        raise FileNotFoundError(f"Checkpoint not found at {checkpoint_path}")
-    return gaussians, scene
+@torch.no_grad()
+def load_checkpoint(ckpt_path: str, gaussians, scene, opt, ignore_train_idxs=False):
+    ckpt_dict = torch.load(ckpt_path, weights_only=False)  # Explicitly allow all data
+    (model_params, first_iter, train_idxs) = ckpt_dict["model_params"], ckpt_dict["first_iter"], ckpt_dict["train_idx"]
+    gaussians.restore(model_params, opt)
+    if not ignore_train_idxs:
+        scene.train_idxs = train_idxs
+    base_iter = ckpt_dict.get("base_iter", 0)
+    return first_iter, base_iter
 
 def render_uncertainty_from_poses(poses, gaussians, pipe, background, output_dir):
     os.makedirs(output_dir, exist_ok=True)

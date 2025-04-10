@@ -32,7 +32,7 @@ csm = ClusterStateManager()
 @torch.no_grad()
 def save_checkpoint(gaussians, iteration, scene, base_iter=0, save_path=None, save_last=True):
     ckpt_dict = {
-        "model_params": gaussians.capture(),
+        "model_params": gaussians.capture(),  # Already tensors
         "first_iter": iteration,
         "train_idx": scene.train_idxs,
         "base_iter": base_iter
@@ -44,7 +44,7 @@ def save_checkpoint(gaussians, iteration, scene, base_iter=0, save_path=None, sa
     if save_path is None:
         save_path = scene.model_path + "/chkpnt" + str(iteration) + ".pth"
     print(f"\n[ITER {iteration}] Saving Checkpoint to {save_path}")
-    torch.save(ckpt_dict, save_path)  
+    torch.save(ckpt_dict, save_path)
 
 def load_checkpoint(ckpt_path: str, gaussians, scene, opt, ignore_train_idxs=False):
     add_safe_globals([scalar, dtype, Float32DType])
