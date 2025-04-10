@@ -15,9 +15,15 @@ import matplotlib.pyplot as plt
 # Define load_model function
 def load_model(checkpoint_path, dataset, opt):
     gaussians = GaussianModel(dataset, is_variational=True)
+    # Explicitly set dataset_name if not provided
+    if not hasattr(dataset, 'dataset_name') or dataset.dataset_name is None:
+        dataset.dataset_name = "BLENDER"  # Default to BLENDER; adjust based on your dataset
+    # Ensure source_path is set
+    if not hasattr(dataset, 'source_path') or dataset.source_path == "":
+        dataset.source_path = os.path.dirname(checkpoint_path)
     scene = Scene(dataset, gaussians)
     if os.path.exists(checkpoint_path):
-        ckpt_dict = torch.load(checkpoint_path, weights_only=False)  # Explicitly allow all data
+        ckpt_dict = torch.load(checkpoint_path, weights_only=False)
         gaussians.restore(ckpt_dict["model_params"], opt)
     else:
         raise FileNotFoundError(f"Checkpoint not found at {checkpoint_path}")
@@ -25,17 +31,17 @@ def load_model(checkpoint_path, dataset, opt):
 
 def render_uncertainty_from_poses(poses, gaussians, pipe, background, output_dir):
     os.makedirs(output_dir, exist_ok=True)
-    plt.figure(figsize=(20, 5 * len(poses)))  # Adjust figure size based on number of poses
+    plt.figure(figsize=(15, 5 * len(poses)))  # Adjusted for 3 columns
 
     for idx, pose in enumerate(poses):
-        # Convert pose to Camera object
+        # Convert pose to Camera object with image=None
         viewpoint = Camera(
             colmap_id=idx,
             R=np.array(pose["R"]),
             T=np.array(pose["T"]),
             FoVx=pose["FoVx"],
             FoVy=pose["FoVy"],
-            image=None,
+            image=None,  # Explicitly None for novel poses
             gt_alpha_mask=None,
             image_name=f"pose_{idx:03d}",
             uid=idx,
@@ -65,9 +71,6 @@ def render_uncertainty_from_poses(poses, gaussians, pipe, background, output_dir
         pixel_gaussian_counter = render_pkg["pixel_gaussian_counter"]
         fisher_uncertainty = torch.log(fisher_uncertainty / pixel_gaussian_counter.clamp(min=1e-6))
 
-        # Ground Truth (Placeholder: Replace with actual ground truth if available)
-        gt_image = torch.zeros_like(var_rgb)  # Placeholder black image
-
         # Normalize uncertainties to 0-1
         var_min, var_max = var_uncertainty.min(), var_uncertainty.max()
         var_uncertainty_norm = (var_uncertainty - var_min) / (var_max - var_min + 1e-6)
@@ -76,28 +79,22 @@ def render_uncertainty_from_poses(poses, gaussians, pipe, background, output_dir
         fisher_uncertainty_norm = (fisher_uncertainty - fisher_min) / (fisher_max - fisher_min + 1e-6)
 
         # Convert tensors to numpy for plotting
-        gt_img_np = gt_image.cpu().numpy().transpose(1, 2, 0)
-        render_img_np = var_rgb.cpu().numpy().transpose(1, 2, 0)  # Using var_rgb as rendered image
+        render_img_np = var_rgb.cpu().numpy().transpose(1, 2, 0)
         fisher_unc_np = fisher_uncertainty_norm.cpu().numpy()
         var_unc_np = var_uncertainty_norm.cpu().numpy()
 
-        # Plotting
-        plt.subplot(len(poses), 4, idx * 4 + 1)
-        plt.imshow(gt_img_np)
-        plt.title(f"GT - Pose {idx}")
-        plt.axis('off')
-
-        plt.subplot(len(poses), 4, idx * 4 + 2)
+        # Plotting (3 subplots per row)
+        plt.subplot(len(poses), 3, idx * 3 + 1)
         plt.imshow(render_img_np)
         plt.title(f"Render - Pose {idx}")
         plt.axis('off')
 
-        plt.subplot(len(poses), 4, idx * 4 + 3)
+        plt.subplot(len(poses), 3, idx * 3 + 2)
         plt.imshow(fisher_unc_np, cmap='viridis')
         plt.title(f"FisherRF Unc - Pose {idx}")
         plt.axis('off')
 
-        plt.subplot(len(poses), 4, idx * 4 + 4)
+        plt.subplot(len(poses), 3, idx * 3 + 3)
         plt.imshow(var_unc_np, cmap='viridis')
         plt.title(f"Var Unc - Pose {idx}")
         plt.axis('off')
@@ -126,7 +123,7 @@ if __name__ == "__main__":
     dataset = lp.extract(args)
     opt = op.extract(args)
     pipe = pp.extract(args)
-    gaussians, scene = load_model(args.checkpoint, dataset, opt)  # Correct function call
+    gaussians, scene = load_model(args.checkpoint, dataset, opt)
 
     with open(args.poses_file, "r") as f:
         poses = json.load(f)
