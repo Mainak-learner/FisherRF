@@ -31,17 +31,20 @@ csm = ClusterStateManager()
 
 @torch.no_grad()
 def save_checkpoint(gaussians, iteration, scene, base_iter=0, save_path=None, save_last=True):
-    ckpt_dict = {"model_params": gaussians.capture(), "first_iter": iteration, "train_idx": scene.train_idxs, "base_iter": base_iter}
-
+    ckpt_dict = {
+        "model_params": gaussians.capture(),
+        "first_iter": iteration,
+        "train_idx": scene.train_idxs,
+        "base_iter": base_iter
+    }
     if save_last:
         last_path = scene.model_path + "/last.pth"
-        print("\n[ITER {}] Saving Checkpoint to {}".format(iteration, last_path))
-        torch.save(ckpt_dict, last_path)   
-
+        print(f"\n[ITER {iteration}] Saving Checkpoint to {last_path}")
+        torch.save(ckpt_dict, last_path)
     if save_path is None:
         save_path = scene.model_path + "/chkpnt" + str(iteration) + ".pth"
-    print("\n[ITER {}] Saving Checkpoint to {}".format(iteration, save_path))
-    torch.save(ckpt_dict, save_path)   
+    print(f"\n[ITER {iteration}] Saving Checkpoint to {save_path}")
+    torch.save(ckpt_dict, save_path)  
 
 def load_checkpoint(ckpt_path: str, gaussians, scene, opt, ignore_train_idxs=False):
     add_safe_globals([scalar, dtype, Float32DType])
@@ -351,7 +354,8 @@ if __name__ == "__main__":
     parser.add_argument("--override_idxs", default=None, type=str, help="speical test idxs on uncertainty evaluation")
 
     args = parser.parse_args(sys.argv[1:])
-    args.save_iterations.append(args.iterations)
+    args.save_iterations.append(args.iterations)  # Ensure final iteration is in save_iterations
+    args.checkpoint_iterations.append(args.iterations)  # Ensure final iteration is in checkpoint_iterations
     if args.log_every_image:
         args.test_iterations = []
     if args.iterations not in args.test_iterations:
