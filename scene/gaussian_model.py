@@ -56,13 +56,9 @@ class GaussianModel:
         self.optimizer = None
         self.percent_dense = 0
         self.spatial_lr_scalar = 0
-        if self.is_variational:
-            # ... (existing variational init)
-            self.spawn_percent_base = 0.01
-            self.spawn_min_opacity = 0.0005
+        self.is_variational = is_variational            
         self.setup_functions()
         
-        self.is_variational = is_variational
         if self.is_variational:
             self.n_models = 10
             self.M = 5
@@ -75,6 +71,8 @@ class GaussianModel:
             self.model_id = None
             self.offsets = {}
             self.mr_list = None
+            self.spawn_percent_base = 0.01
+            self.spawn_min_opacity = 0.0005
         else:
             self.offsets = None  # Explicitly set to None when not variational
 
