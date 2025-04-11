@@ -51,11 +51,13 @@ def render_perturbed_images(original_camera: Camera, perturbed_cameras: List[Cam
     return original_render, perturbed_renders
 
 def extract_features(img: torch.Tensor) -> Tuple[List[cv2.KeyPoint], np.ndarray]:
-    # Ensure img is a PyTorch tensor and convert to NumPy if needed
+    # Ensure img is a PyTorch tensor and detach it if it requires gradients
     if not torch.is_tensor(img):
         img = torch.from_numpy(np.array(img)).float()
+    if img.requires_grad:
+        img = img.detach()  # Detach from computational graph
     if img.device != torch.device("cpu"):
-        img = img.cpu()
+        img = img.cpu()  # Move to CPU if not already there
     # Convert from (C, H, W) to (H, W, C) and scale to 0-255
     img_np = (img.permute(1, 2, 0).numpy() * 255).astype(np.uint8)
     gray = cv2.cvtColor(img_np, cv2.COLOR_RGB2GRAY)
