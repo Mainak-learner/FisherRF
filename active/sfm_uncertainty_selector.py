@@ -33,7 +33,7 @@ class SFMUncertaintySelector:
             uncertainties.append(uncertainty)
 
         # Select views with lowest uncertainty (most stable poses)
-        sorted_indices = torch.argsort(uncertainties)[:num_views]
+        sorted_indices = torch.tensor(uncertainties).argsort(descending=True)[:num_views]
         selected_views = [candidate_views[i] for i in sorted_indices.tolist()]
 
         return selected_views
