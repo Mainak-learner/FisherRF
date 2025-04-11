@@ -321,7 +321,7 @@ if __name__ == "__main__":
     parser.add_argument("--distance_sigma", type=float, default=50.0, help="Controls the influence of distance in view selection")
     parser.add_argument("--use_scheduler", type=bool, default=False, help="Controls whether distance_sigma scheduler should be used.")
     # Flags for view selections
-    parser.add_argument("--method", type=str, default="rand", choices=["rand", "entropy", "H_reg"])
+    parser.add_argument("--method", type=str, default="rand", choices=["rand", "entropy", "H_reg", "sfm_uncertainty"])
     parser.add_argument("--schema", type=str, default="all")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--reg_lambda", type=float, default=1e-6)
