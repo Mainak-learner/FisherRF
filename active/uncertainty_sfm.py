@@ -1,7 +1,8 @@
 import cv2
 import numpy as np
 import torch
-from utils.camera_utils import rand_rotation_matrix, getWorld2View
+from utils.camera_utils import rand_rotation_matrix
+from utils.graphics_utils import getWorld2View
 from scene.cameras import Camera
 from gaussian_renderer import render
 from typing import List, Tuple
