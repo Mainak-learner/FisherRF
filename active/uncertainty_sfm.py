@@ -50,58 +50,85 @@ def render_perturbed_images(original_camera: Camera, perturbed_cameras: List[Cam
     perturbed_renders = [render(cam, gaussians, pipe, background)["render"] for cam in perturbed_cameras]
     return original_render, perturbed_renders
 
-def extract_features(img: torch.Tensor) -> Tuple[List[cv2.KeyPoint], np.ndarray]:
-    # Ensure img is a PyTorch tensor and detach it if it requires gradients
+def extract_features(img: torch.Tensor) -> Tuple[List[cv2.KeyPoint], np.ndarray, int]:
     if not torch.is_tensor(img):
         img = torch.from_numpy(np.array(img)).float()
     if img.requires_grad:
-        img = img.detach()  # Detach from computational graph
+        img = img.detach()
     if img.device != torch.device("cpu"):
-        img = img.cpu()  # Move to CPU if not already there
-    # Convert from (C, H, W) to (H, W, C) and scale to 0-255
+        img = img.cpu()
     img_np = (img.permute(1, 2, 0).numpy() * 255).astype(np.uint8)
     gray = cv2.cvtColor(img_np, cv2.COLOR_RGB2GRAY)
     sift = cv2.SIFT_create()
     keypoints, descriptors = sift.detectAndCompute(gray, None)
-    return keypoints, descriptors
+    # Handle case where no keypoints are detected
+    if keypoints is None or descriptors is None:
+        return [], np.array([]), 0
+    return keypoints, descriptors, len(keypoints)
 
-def estimate_relative_poses(original_image: torch.Tensor, perturbed_images: List[torch.Tensor]) -> List[Tuple[np.ndarray, np.ndarray]]:
-    original_kp, original_desc = extract_features(original_image)
+def estimate_relative_poses(original_image: torch.Tensor, perturbed_images: List[torch.Tensor]) -> List[Tuple[np.ndarray, np.ndarray, int, int]]:
+    original_kp, original_desc, original_kp_count = extract_features(original_image)
     relative_poses = []
 
+    # If no features in original image, return default poses with zero keypoints and matches
+    if original_kp_count == 0:
+        return [(np.eye(3), np.zeros(3), original_kp_count, 0) for _ in perturbed_images]
+
     for perturbed_img in perturbed_images:
-        perturbed_kp, perturbed_desc = extract_features(perturbed_img)
+        perturbed_kp, perturbed_desc, perturbed_kp_count = extract_features(perturbed_img)
+        if perturbed_kp_count == 0:
+            relative_poses.append((np.eye(3), np.zeros(3), perturbed_kp_count, 0))
+            continue
+
         bf = cv2.BFMatcher()
         matches = bf.knnMatch(original_desc, perturbed_desc, k=2)
         good_matches = [m for m, n in matches if m.distance < 0.75 * n.distance]
+        num_good_matches = len(good_matches)
 
-        if len(good_matches) < 8:
-            relative_poses.append((np.eye(3), np.zeros(3)))
+        if num_good_matches < 8:
+            relative_poses.append((np.eye(3), np.zeros(3), perturbed_kp_count, num_good_matches))
             continue
 
         src_pts = np.float32([original_kp[m.queryIdx].pt for m in good_matches]).reshape(-1, 2)
         dst_pts = np.float32([perturbed_kp[m.trainIdx].pt for m in good_matches]).reshape(-1, 2)
         E, mask = cv2.findEssentialMat(src_pts, dst_pts, focal=1.0, pp=(0., 0.), method=cv2.RANSAC, prob=0.999, threshold=1.0)
         if E is None or mask is None:
-            relative_poses.append((np.eye(3), np.zeros(3)))
+            relative_poses.append((np.eye(3), np.zeros(3), perturbed_kp_count, num_good_matches))
             continue
         _, R_est, T_est, _ = cv2.recoverPose(E, src_pts, dst_pts, focal=1.0, pp=(0., 0.))
-        relative_poses.append((R_est, T_est))
+        relative_poses.append((R_est, T_est, perturbed_kp_count, num_good_matches))
 
     return relative_poses
 
-def compute_uncertainty(actual_poses: List[Tuple[np.ndarray, np.ndarray]], estimated_poses: List[Tuple[np.ndarray, np.ndarray]]) -> float:
+def compute_uncertainty(actual_poses: List[Tuple[np.ndarray, np.ndarray]], 
+                        estimated_poses: List[Tuple[np.ndarray, np.ndarray, int, int]]) -> float:
     total_error = 0.0
     num_valid = 0
-    for actual_R, actual_T, est_R, est_T in zip([p[0] for p in actual_poses], [p[1] for p in actual_poses], 
-                                                [p[0] for p in estimated_poses], [p[1] for p in estimated_poses]):
-        if np.array_equal(est_R, np.eye(3)) and np.array_equal(est_T, np.zeros(3)):
-            continue
+    max_keypoints = 1000  # Arbitrary maximum for normalization; adjust based on typical values
+    min_keypoints_threshold = 10  # Minimum keypoints for reliable pose estimation
+    min_matches_threshold = 8    # Minimum good matches for reliable pose estimation
+
+    for actual_R, actual_T, (est_R, est_T, perturbed_kp_count, num_good_matches) in zip(
+            [p[0] for p in actual_poses], [p[1] for p in actual_poses], estimated_poses):
+        # Base error from pose difference
         R_diff = np.dot(actual_R.T, est_R)
-        angle_error = np.arccos((np.trace(R_diff) - 1) / 2) * 180 / np.pi
+        angle_error = np.arccos(np.clip((np.trace(R_diff) - 1) / 2, -1.0, 1.0)) * 180 / np.pi
         T_error = np.linalg.norm(actual_T - est_T)
-        total_error += angle_error + T_error
+        pose_error = angle_error + T_error
+
+        # Penalty based on feature quality
+        kp_penalty = max(0, (max_keypoints - perturbed_kp_count) / max_keypoints) * 100  # Scale to 0-100
+        match_penalty = max(0, (min_matches_threshold - num_good_matches) / min_matches_threshold) * 100 if num_good_matches < min_matches_threshold else 0
+        
+        # Total error includes pose error and feature penalties
+        if np.array_equal(est_R, np.eye(3)) and np.array_equal(est_T, np.zeros(3)):
+            # Default pose: high uncertainty due to failure
+            total_error += 200 + kp_penalty + match_penalty  # Base high error for failure
+        else:
+            # Valid pose: combine pose error with feature penalties
+            total_error += pose_error + kp_penalty + match_penalty
         num_valid += 1
+
     return total_error / max(1, num_valid)
 
 def evaluate_pose_uncertainty(original_camera: Camera, gaussians, pipe, background, num_perturbations: int = 5, 
@@ -112,5 +139,5 @@ def evaluate_pose_uncertainty(original_camera: Camera, gaussians, pipe, backgrou
                               cam.T.detach().cpu().numpy() if torch.is_tensor(cam.T) else np.array(cam.T)) 
                              for cam in perturbed_cams]
     estimated_relative_poses = estimate_relative_poses(original_render, perturbed_renders)
-    uncertainty = compute_uncertainty(actual_relative_poses, estimated_relative_poses)
+    uncertainty = compute_uncertainty(actual_relative_poses, estimated_poses)
     return uncertainty
