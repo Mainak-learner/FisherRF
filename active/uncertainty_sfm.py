@@ -61,7 +61,6 @@ def extract_features(img: torch.Tensor) -> Tuple[List[cv2.KeyPoint], np.ndarray,
     gray = cv2.cvtColor(img_np, cv2.COLOR_RGB2GRAY)
     sift = cv2.SIFT_create()
     keypoints, descriptors = sift.detectAndCompute(gray, None)
-    # Handle case where no keypoints are detected
     if keypoints is None or descriptors is None:
         return [], np.array([]), 0
     return keypoints, descriptors, len(keypoints)
@@ -70,7 +69,6 @@ def estimate_relative_poses(original_image: torch.Tensor, perturbed_images: List
     original_kp, original_desc, original_kp_count = extract_features(original_image)
     relative_poses = []
 
-    # If no features in original image, return default poses with zero keypoints and matches
     if original_kp_count == 0:
         return [(np.eye(3), np.zeros(3), original_kp_count, 0) for _ in perturbed_images]
 
@@ -82,7 +80,16 @@ def estimate_relative_poses(original_image: torch.Tensor, perturbed_images: List
 
         bf = cv2.BFMatcher()
         matches = bf.knnMatch(original_desc, perturbed_desc, k=2)
-        good_matches = [m for m, n in matches if m.distance < 0.75 * n.distance]
+        # Handle cases where fewer than 2 matches are returned
+        good_matches = []
+        for match in matches:
+            if len(match) == 2:  # Ensure there are 2 matches to unpack
+                m, n = match
+                if m.distance < 0.75 * n.distance:
+                    good_matches.append(m)
+            elif len(match) == 1:  # Single match case
+                good_matches.append(match[0])  # Use the single match if it exists
+
         num_good_matches = len(good_matches)
 
         if num_good_matches < 8:
@@ -104,28 +111,23 @@ def compute_uncertainty(actual_poses: List[Tuple[np.ndarray, np.ndarray]],
                         estimated_poses: List[Tuple[np.ndarray, np.ndarray, int, int]]) -> float:
     total_error = 0.0
     num_valid = 0
-    max_keypoints = 1000  # Arbitrary maximum for normalization; adjust based on typical values
-    min_keypoints_threshold = 10  # Minimum keypoints for reliable pose estimation
-    min_matches_threshold = 8    # Minimum good matches for reliable pose estimation
+    max_keypoints = 1000  # Adjust based on typical values
+    min_keypoints_threshold = 10
+    min_matches_threshold = 8
 
     for actual_R, actual_T, (est_R, est_T, perturbed_kp_count, num_good_matches) in zip(
             [p[0] for p in actual_poses], [p[1] for p in actual_poses], estimated_poses):
-        # Base error from pose difference
         R_diff = np.dot(actual_R.T, est_R)
         angle_error = np.arccos(np.clip((np.trace(R_diff) - 1) / 2, -1.0, 1.0)) * 180 / np.pi
         T_error = np.linalg.norm(actual_T - est_T)
         pose_error = angle_error + T_error
 
-        # Penalty based on feature quality
-        kp_penalty = max(0, (max_keypoints - perturbed_kp_count) / max_keypoints) * 100  # Scale to 0-100
+        kp_penalty = max(0, (max_keypoints - perturbed_kp_count) / max_keypoints) * 100
         match_penalty = max(0, (min_matches_threshold - num_good_matches) / min_matches_threshold) * 100 if num_good_matches < min_matches_threshold else 0
         
-        # Total error includes pose error and feature penalties
         if np.array_equal(est_R, np.eye(3)) and np.array_equal(est_T, np.zeros(3)):
-            # Default pose: high uncertainty due to failure
-            total_error += 200 + kp_penalty + match_penalty  # Base high error for failure
+            total_error += 200 + kp_penalty + match_penalty
         else:
-            # Valid pose: combine pose error with feature penalties
             total_error += pose_error + kp_penalty + match_penalty
         num_valid += 1
 
@@ -139,5 +141,5 @@ def evaluate_pose_uncertainty(original_camera: Camera, gaussians, pipe, backgrou
                               cam.T.detach().cpu().numpy() if torch.is_tensor(cam.T) else np.array(cam.T)) 
                              for cam in perturbed_cams]
     estimated_relative_poses = estimate_relative_poses(original_render, perturbed_renders)
-    uncertainty = compute_uncertainty(actual_relative_poses, estimated_relative_poses)
+    uncertainty = compute_uncertainty(actual_relative_poses, estimated_poses)
     return uncertainty
