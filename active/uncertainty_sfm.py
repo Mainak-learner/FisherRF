@@ -23,7 +23,7 @@ def generate_perturbed_poses(original_camera: Camera, num_perturbations: int = 5
     R = original_camera.R.detach().cpu().numpy()
     T = original_camera.T.detach().cpu().numpy()
     height, width = original_camera.image_height, original_camera.image_width  # Dataset dimensions
-    trans = original_camera.trans.detach().cpu().numpy()
+    trans = original_camera.trans
     scale = original_camera.scale  # Scalar, no conversion needed
 
     for i in range(num_perturbations):
