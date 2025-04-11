@@ -19,8 +19,9 @@ def generate_perturbed_poses(original_camera: Camera, num_perturbations: int = 5
         List of perturbed Camera objects with dataset-consistent dimensions.
     """
     perturbed_cameras = []
-    R, T = original_camera.R, original_camera.T
-    height, width = original_camera.height, original_camera.width  # Use dataset dimensions from original camera
+    R, T = original_camera.R.cpu().numpy(), original_camera.T.cpu().numpy()  # Convert to numpy for perturbation
+    height, width = original_camera.image_height, original_camera.image_width  # Dataset dimensions
+    trans, scale = original_camera.trans.cpu().numpy(), original_camera.scale  # Preserve trans and scale
 
     for i in range(num_perturbations):
         # Generate random rotation
@@ -31,7 +32,7 @@ def generate_perturbed_poses(original_camera: Camera, num_perturbations: int = 5
         T_perturb = np.random.uniform(-translation_magnitude, translation_magnitude, 3)
         T_new = T + T_perturb
 
-        # Create new camera with perturbed pose, no image, but with dataset dimensions
+        # Create new camera with perturbed pose, no image, but with dataset dimensions and original trans/scale
         perturbed_cam = Camera(
             colmap_id=original_camera.colmap_id,
             R=R_new,
@@ -42,11 +43,13 @@ def generate_perturbed_poses(original_camera: Camera, num_perturbations: int = 5
             gt_alpha_mask=None,
             image_name=f"perturbed_{i}",
             uid=original_camera.uid,
+            trans=trans,  # Pass original trans
+            scale=scale,  # Pass original scale
             data_device="cuda",
             height=height,  # Pass dataset height
             width=width     # Pass dataset width
         )
-    perturbed_cameras.append(perturbed_cam)
+        perturbed_cameras.append(perturbed_cam)
 
     return perturbed_cameras
 
@@ -59,7 +62,7 @@ def render_perturbed_images(original_camera: Camera, perturbed_cameras: List[Cam
     if original_camera.image is not None:
         original_render = render(original_camera, gaussians, pipe, background)["render"]
     else:
-        original_render = torch.zeros((3, original_camera.height, original_camera.width), device="cuda")  # Dummy render
+        original_render = torch.zeros((3, original_camera.image_height, original_camera.image_width), device="cuda")  # Dummy render
 
     # Render perturbed images
     perturbed_renders = []

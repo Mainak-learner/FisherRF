@@ -16,21 +16,34 @@ from utils.graphics_utils import getWorld2View2, getProjectionMatrix
 
 class Camera(nn.Module):
     def __init__(self, colmap_id, R, T, FoVx, FoVy, image=None, gt_alpha_mask=None, image_name="", uid=-1, 
-                 data_device="cuda", height=None, width=None):
-        self.colmap_id = colmap_id
-        self.R = torch.from_numpy(R).float().to(data_device)  # Rotation matrix
-        self.T = torch.from_numpy(T).float().to(data_device)  # Translation vector
-        self.FoVx = FoVx  # Field of view in x direction
-        self.FoVy = FoVy  # Field of view in y direction
-        self.image_name = image_name
+                 trans=np.array([0.0, 0.0, 0.0]), scale=1.0, data_device="cuda", height=None, width=None):
         self.uid = uid
-        self.data_device = data_device
+        self.colmap_id = colmap_id
+        self.R = torch.from_numpy(R).float()  # Ensure R is a tensor
+        self.T = torch.from_numpy(T).float()  # Ensure T is a tensor
+        self.FoVx = FoVx
+        self.FoVy = FoVy
+        self.image_name = image_name
+        self.trans = torch.from_numpy(trans).float()  # Translation offset
+        self.scale = scale  # Scale factor
+
+        try:
+            self.data_device = torch.device(data_device)
+        except Exception as e:
+            print(e)
+            print(f"[Warning] Custom device {data_device} failed, fallback to default cuda device")
+            self.data_device = torch.device("cuda")
+
+        # Move tensors to the correct device after initialization
+        self.R = self.R.to(self.data_device)
+        self.T = self.T.to(self.data_device)
+        self.trans = self.trans.to(self.data_device)
 
         # Handle image and dimensions
         if image is not None:
             self.original_image = image.clamp(0.0, 1.0).to(self.data_device)
-            self.image_height = self.original_image.shape[1]
             self.image_width = self.original_image.shape[2]
+            self.image_height = self.original_image.shape[1]
 
             # Apply gt_alpha_mask if provided, otherwise use a ones mask
             if gt_alpha_mask is not None:
