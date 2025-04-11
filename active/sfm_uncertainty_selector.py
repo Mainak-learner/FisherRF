@@ -6,6 +6,7 @@ from scene.cameras import Camera
 from gaussian_renderer import render
 from utils.camera_utils import rand_rotation_matrix
 import torch
+from tqdm import tqdm
 from typing import List
 
 class SFMUncertaintySelector:
@@ -23,7 +24,7 @@ class SFMUncertaintySelector:
         candidate_cameras = scene.getCandidateCameras()  # Assume this method exists
         uncertainties = []
 
-        for cam in candidate_cameras:
+        for cam in tqdm(candidate_cameras, desc="Calculating uncertainty for candidate views"):
             # Evaluate uncertainty for this camera pose
             uncertainty = evaluate_pose_uncertainty(cam, gaussians, pipe, background,
                                                   num_perturbations=self.num_perturbations,
