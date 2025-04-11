@@ -1,12 +1,13 @@
 # active/sfm_uncertainty_selector.py
 
 import numpy as np
+import torch
+from typing import List
 from ..utils.uncertainty_sfm import evaluate_pose_uncertainty
 from ..scene.cameras import Camera
 from ..gaussian_renderer import render
 from ..utils.graphics_utils import rand_rotation_matrix
-import torch
-from typing import List
+
 
 class SFMUncertaintySelector:
     def __init__(self, args):
