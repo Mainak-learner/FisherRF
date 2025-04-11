@@ -15,35 +15,37 @@ import numpy as np
 from utils.graphics_utils import getWorld2View2, getProjectionMatrix
 
 class Camera(nn.Module):
-    def __init__(self, colmap_id, R, T, FoVx, FoVy, image, gt_alpha_mask,
-                 image_name, uid,
-                 trans=np.array([0.0, 0.0, 0.0]), scale=1.0, data_device = "cuda"
-                 ):
-        super(Camera, self).__init__()
-
-        self.uid = uid
+    def __init__(self, colmap_id, R, T, FoVx, FoVy, image=None, gt_alpha_mask=None, image_name="", uid=-1, 
+                 data_device="cuda", height=None, width=None):
         self.colmap_id = colmap_id
-        self.R = R
-        self.T = T
-        self.FoVx = FoVx
-        self.FoVy = FoVy
+        self.R = torch.from_numpy(R).float().to(data_device)  # Rotation matrix
+        self.T = torch.from_numpy(T).float().to(data_device)  # Translation vector
+        self.FoVx = FoVx  # Field of view in x direction
+        self.FoVy = FoVy  # Field of view in y direction
         self.image_name = image_name
+        self.uid = uid
+        self.data_device = data_device
 
-        try:
-            self.data_device = torch.device(data_device)
-        except Exception as e:
-            print(e)
-            print(f"[Warning] Custom device {data_device} failed, fallback to default cuda device" )
-            self.data_device = torch.device("cuda")
+        # Handle image and dimensions
+        if image is not None:
+            self.original_image = image.clamp(0.0, 1.0).to(self.data_device)
+            self.image_height = self.original_image.shape[1]
+            self.image_width = self.original_image.shape[2]
 
-        self.original_image = image.clamp(0.0, 1.0).to(self.data_device)
-        self.image_width = self.original_image.shape[2]
-        self.image_height = self.original_image.shape[1]
-
-        if gt_alpha_mask is not None:
-            self.original_image *= gt_alpha_mask.to(self.data_device)
+            # Apply gt_alpha_mask if provided, otherwise use a ones mask
+            if gt_alpha_mask is not None:
+                self.original_image *= gt_alpha_mask.clamp(0.0, 1.0).to(self.data_device)
+            else:
+                self.original_image *= torch.ones((1, self.image_height, self.image_width), device=self.data_device)
         else:
-            self.original_image *= torch.ones((1, self.image_height, self.image_width), device=self.data_device)
+            self.original_image = None  # No ground truth image for perturbed poses
+            if height is None or width is None:
+                raise ValueError("Height and width must be provided if no image is given for the camera.")
+            self.image_height = height
+            self.image_width = width
+
+        # Store gt_alpha_mask (can be None)
+        self.gt_alpha_mask = gt_alpha_mask.clamp(0.0, 1.0).to(self.data_device) if gt_alpha_mask is not None else None
 
         self.zfar = 100.0
         self.znear = 0.01

@@ -11,15 +11,16 @@ def generate_perturbed_poses(original_camera: Camera, num_perturbations: int = 5
     """
     Generate perturbed camera poses around the original camera pose.
     Args:
-        original_camera: Camera object from which to perturb.
+        original_camera: Camera object from which to perturb (assumed to have dataset dimensions).
         num_perturbations: Number of perturbed poses to generate.
         deflection: Magnitude of rotation perturbation (0 to 1).
         translation_magnitude: Magnitude of translation perturbation in world units.
     Returns:
-        List of perturbed Camera objects.
+        List of perturbed Camera objects with dataset-consistent dimensions.
     """
     perturbed_cameras = []
     R, T = original_camera.R, original_camera.T
+    height, width = original_camera.height, original_camera.width  # Use dataset dimensions from original camera
 
     for i in range(num_perturbations):
         # Generate random rotation
@@ -30,29 +31,42 @@ def generate_perturbed_poses(original_camera: Camera, num_perturbations: int = 5
         T_perturb = np.random.uniform(-translation_magnitude, translation_magnitude, 3)
         T_new = T + T_perturb
 
-        # Create new camera with perturbed pose
+        # Create new camera with perturbed pose, no image, but with dataset dimensions
         perturbed_cam = Camera(
             colmap_id=original_camera.colmap_id,
             R=R_new,
             T=T_new,
             FoVx=original_camera.FoVx,
             FoVy=original_camera.FoVy,
-            image=None,  # Image will be rendered later
+            image=None,  # No ground truth image for perturbed poses
             gt_alpha_mask=None,
             image_name=f"perturbed_{i}",
             uid=original_camera.uid,
-            data_device="cuda"
+            data_device="cuda",
+            height=height,  # Pass dataset height
+            width=width     # Pass dataset width
         )
-        perturbed_cameras.append(perturbed_cam)
+    perturbed_cameras.append(perturbed_cam)
 
     return perturbed_cameras
 
 def render_perturbed_images(original_camera: Camera, perturbed_cameras: List[Camera], gaussians, pipe, background) -> Tuple[torch.Tensor, List[torch.Tensor]]:
     """
     Render images from original and perturbed camera poses.
+    If camera.image is None, it will be rendered later.
     """
-    original_render = render(original_camera, gaussians, pipe, background)["render"]
-    perturbed_renders = [render(cam, gaussians, pipe, background)["render"] for cam in perturbed_cameras]
+    # Render original image if it exists, otherwise use a dummy tensor with correct dimensions
+    if original_camera.image is not None:
+        original_render = render(original_camera, gaussians, pipe, background)["render"]
+    else:
+        original_render = torch.zeros((3, original_camera.height, original_camera.width), device="cuda")  # Dummy render
+
+    # Render perturbed images
+    perturbed_renders = []
+    for cam in perturbed_cameras:
+        render_output = render(cam, gaussians, pipe, background)
+        perturbed_renders.append(render_output["render"])
+
     return original_render, perturbed_renders
 
 def extract_features(img: torch.Tensor) -> Tuple[List[cv2.KeyPoint], np.ndarray]:
