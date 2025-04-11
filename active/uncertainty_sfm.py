@@ -80,15 +80,14 @@ def estimate_relative_poses(original_image: torch.Tensor, perturbed_images: List
 
         bf = cv2.BFMatcher()
         matches = bf.knnMatch(original_desc, perturbed_desc, k=2)
-        # Handle cases where fewer than 2 matches are returned
         good_matches = []
         for match in matches:
-            if len(match) == 2:  # Ensure there are 2 matches to unpack
+            if len(match) == 2:
                 m, n = match
                 if m.distance < 0.75 * n.distance:
                     good_matches.append(m)
-            elif len(match) == 1:  # Single match case
-                good_matches.append(match[0])  # Use the single match if it exists
+            elif len(match) == 1:
+                good_matches.append(match[0])
 
         num_good_matches = len(good_matches)
 
@@ -111,7 +110,7 @@ def compute_uncertainty(actual_poses: List[Tuple[np.ndarray, np.ndarray]],
                         estimated_poses: List[Tuple[np.ndarray, np.ndarray, int, int]]) -> float:
     total_error = 0.0
     num_valid = 0
-    max_keypoints = 1000  # Adjust based on typical values
+    max_keypoints = 1000
     min_keypoints_threshold = 10
     min_matches_threshold = 8
 
@@ -141,5 +140,5 @@ def evaluate_pose_uncertainty(original_camera: Camera, gaussians, pipe, backgrou
                               cam.T.detach().cpu().numpy() if torch.is_tensor(cam.T) else np.array(cam.T)) 
                              for cam in perturbed_cams]
     estimated_relative_poses = estimate_relative_poses(original_render, perturbed_renders)
-    uncertainty = compute_uncertainty(actual_relative_poses, estimated_poses)
+    uncertainty = compute_uncertainty(actual_relative_poses, estimated_relative_poses)  # Fixed variable name
     return uncertainty
