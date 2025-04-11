@@ -1,12 +1,12 @@
 # active/sfm_uncertainty_selector.py
 
 import numpy as np
-from ..utils.uncertainty_sfm import evaluate_pose_uncertainty  # Adjusted to go up to parent and into utils
-from ..scene.cameras import Camera
-from ..gaussian_renderer import render
-from ..utils.graphics_utils import rand_rotation_matrix
+from .uncertainty_sfm import evaluate_pose_uncertainty
+from scene.cameras import Camera
+from gaussian_renderer import render
+from utils.graphics_utils import rand_rotation_matrix
+import torch
 from typing import List
-
 
 class SFMUncertaintySelector:
     def __init__(self, args):
@@ -32,7 +32,7 @@ class SFMUncertaintySelector:
             uncertainties.append(uncertainty)
 
         # Select views with lowest uncertainty (most stable poses)
-        sorted_indices = np.argsort(uncertainties)[:num_views]
-        selected_views = [candidate_views[i] for i in sorted_indices]
+        sorted_indices = torch.argsort(uncertainties)[:num_views]
+        selected_views = [candidate_views[i] for i in sorted_indices.tolist()]
 
         return selected_views
