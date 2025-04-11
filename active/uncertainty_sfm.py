@@ -19,11 +19,11 @@ def generate_perturbed_poses(original_camera: Camera, num_perturbations: int = 5
         List of perturbed Camera objects with dataset-consistent dimensions.
     """
     perturbed_cameras = []
-    # Extract R, T, trans, and scale as NumPy arrays for perturbation
-    R = original_camera.R.detach().cpu().numpy()  # Detach tensor and convert to NumPy
+    # Detach tensors before converting to NumPy to avoid gradient issues
+    R = original_camera.R.detach().cpu().numpy()
     T = original_camera.T.detach().cpu().numpy()
     height, width = original_camera.image_height, original_camera.image_width  # Dataset dimensions
-    trans = original_camera.trans  # Already a tensor in Camera
+    trans = original_camera.trans.detach().cpu().numpy()
     scale = original_camera.scale  # Scalar, no conversion needed
 
     for i in range(num_perturbations):
@@ -42,15 +42,15 @@ def generate_perturbed_poses(original_camera: Camera, num_perturbations: int = 5
             T=T_new,
             FoVx=original_camera.FoVx,
             FoVy=original_camera.FoVy,
-            image=None,  # No ground truth image for perturbed poses
+            image=None,
             gt_alpha_mask=None,
             image_name=f"perturbed_{i}",
             uid=original_camera.uid,
-            trans=trans,  # Pass original trans as NumPy array
-            scale=scale,  # Pass original scale
+            trans=trans,
+            scale=scale,
             data_device="cuda",
-            height=height,  # Pass dataset height
-            width=width     # Pass dataset width
+            height=height,
+            width=width
         )
         perturbed_cameras.append(perturbed_cam)
 
