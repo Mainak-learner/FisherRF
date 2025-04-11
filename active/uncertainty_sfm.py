@@ -62,7 +62,7 @@ def render_perturbed_images(original_camera: Camera, perturbed_cameras: List[Cam
     If camera.image is None, it will be rendered later.
     """
     # Render original image if it exists, otherwise use a dummy tensor with correct dimensions
-    if original_camera.image is not None:
+    if original_camera.original_image is not None:
         original_render = render(original_camera, gaussians, pipe, background)["render"]
     else:
         original_render = torch.zeros((3, original_camera.image_height, original_camera.image_width), device="cuda")  # Dummy render
