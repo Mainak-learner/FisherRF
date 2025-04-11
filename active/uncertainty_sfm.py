@@ -139,5 +139,5 @@ def evaluate_pose_uncertainty(original_camera: Camera, gaussians, pipe, backgrou
                               cam.T.detach().cpu().numpy() if torch.is_tensor(cam.T) else np.array(cam.T)) 
                              for cam in perturbed_cams]
     estimated_relative_poses = estimate_relative_poses(original_render, perturbed_renders)
-    uncertainty = compute_uncertainty(actual_relative_poses, estimated_poses)
+    uncertainty = compute_uncertainty(actual_relative_poses, estimated_relative_poses)
     return uncertainty
