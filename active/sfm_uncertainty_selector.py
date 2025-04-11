@@ -4,7 +4,7 @@ import numpy as np
 from .uncertainty_sfm import evaluate_pose_uncertainty
 from scene.cameras import Camera
 from gaussian_renderer import render
-from utils.graphics_utils import rand_rotation_matrix
+from utils.camera_utils import rand_rotation_matrix
 import torch
 from typing import List
 
