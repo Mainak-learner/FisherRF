@@ -111,15 +111,9 @@ def precompute_H_per_gaussian(gaussians, scene, pipeline, background):
     
     # Only use a subset of views for computational efficiency if needed
     all_views = train_views + test_views
-    if len(all_views) > 20:  # Limit to 20 views for faster computation
-        selected_indices = np.linspace(0, len(all_views)-1, 20, dtype=int)
-        computation_views = [all_views[i] for i in selected_indices]
-        print(f"Using {len(computation_views)} views for Hessian computation")
-    else:
-        computation_views = all_views
     
     # Compute Hessian approximation
-    for view in tqdm(computation_views, desc="Precomputing H_per_gaussian"):
+    for view in tqdm(all_views, desc="Precomputing H_per_gaussian"):
         # Render image
         render_pkg = modified_render(view, gaussians, pipeline, background)
         pred_img = render_pkg["render"]
