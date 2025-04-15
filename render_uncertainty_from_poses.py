@@ -198,20 +198,22 @@ def render_combined_uncertainty(model_path, name, iteration, train_views, test_v
     # If no test views, use a subset of train views instead
     if len(test_views) == 0:
         print("No test views found. Using a subset of training views...")
-        if len(train_views) <= num_views:
-            selected_views = train_views
-        else:
-            # Randomly select views
-            selected_indices = random.sample(range(len(train_views)), num_views)
-            selected_views = [train_views[i] for i in selected_indices]
+        # if len(train_views) <= num_views:
+        #     selected_views = train_views
+        # else:
+        #     # Randomly select views
+        #     selected_indices = random.sample(range(len(train_views)), num_views)
+        #     selected_views = [train_views[i] for i in selected_indices]
+        selected_views = train_views        
     else:
+        selected_views = test_views        
         # Use actual test views
-        if len(test_views) <= num_views:
-            selected_views = test_views
-        else:
-            # Randomly select views
-            selected_indices = random.sample(range(len(test_views)), num_views)
-            selected_views = [test_views[i] for i in selected_indices]
+        # if len(test_views) <= num_views:
+        #     selected_views = test_views
+        # else:
+        #     # Randomly select views
+        #     selected_indices = random.sample(range(len(test_views)), num_views)
+        #     selected_views = [test_views[i] for i in selected_indices]
     
     print(f"Selected {len(selected_views)} views for uncertainty visualization")
 
