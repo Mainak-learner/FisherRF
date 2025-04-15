@@ -384,6 +384,14 @@ class GaussianModel:
         el = PlyElement.describe(elements, 'vertex')
         PlyData([el]).write(path)
 
+        if self.is_variational:
+            offset_save_path = path.replace('.ply', '_offsets.npz')
+            np.savez(offset_save_path,
+                xyz_offset=self.offsets["_xyz_offset"].detach().cpu().numpy(),
+                scaling_offset=self.offsets["_scaling_offset"].detach().cpu().numpy(),
+                opacity_offset=self.offsets["_opacity_offset"].detach().cpu().numpy(),
+                mr_list=self.mr_list.detach().cpu().numpy())
+
     def reset_opacity(self):
         opacities_new = inverse_sigmoid(torch.min(self.get_opacity, torch.ones_like(self.get_opacity)*0.01))
         optimizable_tensors = self.replace_tensor_to_optimizer(opacities_new, "opacity")
@@ -431,6 +439,20 @@ class GaussianModel:
         self._rotation = nn.Parameter(torch.tensor(rots, dtype=torch.float, device="cuda").requires_grad_(True))
 
         self.active_sh_degree = self.max_sh_degree
+        
+        offset_save_path = path.replace('.ply', '_offsets.npz')
+        if self.is_variational and os.path.exists(offset_save_path):
+            data = np.load(offset_save_path)
+
+            self.offsets = {
+                "_xyz_offset": nn.Parameter(torch.tensor(data["xyz_offset"], dtype=torch.float, device="cuda", requires_grad=True)),
+                "_scaling_offset": nn.Parameter(torch.tensor(data["scaling_offset"], dtype=torch.float, device="cuda", requires_grad=True)),
+                "_opacity_offset": nn.Parameter(torch.tensor(data["opacity_offset"], dtype=torch.float, device="cuda", requires_grad=True)),
+            }
+
+            self.mr_list = torch.tensor(data["mr_list"], dtype=torch.float, device="cuda", requires_grad=False)
+        else:
+            self.init_offset()
 
     def replace_tensor_to_optimizer(self, tensor, name):
         optimizable_tensors = {}
