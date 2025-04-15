@@ -66,7 +66,8 @@ class Scene:
                 json.dump(json_cams, file)
 
         num_views = len(scene_info.train_cameras)
-        print(len(scene_info.test_cameras))
+        print("Num train views: ", len(scene_info.train_cameras))
+        print("Num test views: ", len(scene_info.test_cameras))
         self.all_train_set = set(range(num_views))
         self.train_idxs = list(range(num_views))
         if shuffle:

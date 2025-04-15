@@ -127,9 +127,7 @@ def precompute_H_per_gaussian(gaussians, scene, pipeline, background):
         # Zero gradients for next iteration
         optim.zero_grad(set_to_none=True)
     
-    # Normalize by number of views
-    H_per_gaussian /= len(computation_views)
-    
+    # Normalize by number of views    
     return H_per_gaussian.detach()
 
 
