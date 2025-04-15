@@ -180,7 +180,6 @@ class GaussianModel:
             return self._xyz
         sample_model_ids = torch.randperm(self.n_models)[:self.M].cuda().requires_grad_(False).detach()
         xyz = self._xyz
-        print("Offset:", self.offsets)
         std = self.offsets["_xyz_offset"][..., sample_model_ids].mean(dim=-1)
         std = torch.nn.functional.softplus(std)
         mean = self.offsets["_xyz_offset"][..., sample_model_ids + self.n_models].mean(dim=-1)
