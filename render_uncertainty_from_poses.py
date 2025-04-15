@@ -290,7 +290,6 @@ if __name__ == "__main__":
     parser.add_argument("--output_dir", type=str, default="./uncertainty_renders", help="Output directory for renders")
     parser.add_argument("--num_views", type=int, default=5, help="Number of test views to render")
     parser.add_argument("--quiet", action="store_true", help="Disable progress output")
-    parser.add_argument("--iteration", default=-1, type=int, help="Which iteration to load")
     
     # Add options for handling the test view issue
     parser.add_argument("--use_train_for_test", action="store_true", help="Use training views for testing")
