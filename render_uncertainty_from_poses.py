@@ -36,12 +36,12 @@ def load_model(checkpoint_path, dataset, opt):
     is_variational = True  # Set to True to match the second script
     gaussians = GaussianModel(dataset.sh_degree, is_variational=is_variational)
     
-    # Ensure dataset parameters are properly set
-    if not hasattr(dataset, 'dataset_name') or dataset.dataset_name is None:
-        dataset.dataset_name = "BLENDER"
+    # # Ensure dataset parameters are properly set
+    # if not hasattr(dataset, 'dataset_name') or dataset.dataset_name is None:
+    #     dataset.dataset_name = "BLENDER"
     
-    if not hasattr(dataset, 'source_path') or dataset.source_path == "":
-        dataset.source_path = os.path.dirname(checkpoint_path)
+    # if not hasattr(dataset, 'source_path') or dataset.source_path == "":
+    #     dataset.source_path = os.path.dirname(checkpoint_path)
     
     # Create scene with simple parameters - matching original code
     iteration = opt.iterations if hasattr(opt, 'iterations') else -1
@@ -311,18 +311,18 @@ if __name__ == "__main__":
     test_views = scene.getTestCameras()
     train_views = scene.getTrainCameras()
     
-    if len(test_views) == 0:
-        print("Warning: No test views found in the dataset!")
-        if args.use_train_for_test:
-            print("Using training views for testing as requested")
-            # Take a subset of train views to use as test views
-            num_test = min(20, len(train_views) // 5)  # Use up to 20 views or 20% of train views
-            # Choose evenly spaced views for diversity
-            test_indices = np.linspace(0, len(train_views)-1, num_test, dtype=int)
-            test_views = [train_views[i] for i in test_indices]
-            # Assign these views as test cameras
-            scene._test_cameras = test_views
-            print(f"Created {len(test_views)} test views from training views")
+    # if len(test_views) == 0:
+    #     print("Warning: No test views found in the dataset!")
+    #     if args.use_train_for_test:
+    #         print("Using training views for testing as requested")
+    #         # Take a subset of train views to use as test views
+    #         num_test = min(20, len(train_views) // 5)  # Use up to 20 views or 20% of train views
+    #         # Choose evenly spaced views for diversity
+    #         test_indices = np.linspace(0, len(train_views)-1, num_test, dtype=int)
+    #         test_views = [train_views[i] for i in test_indices]
+    #         # Assign these views as test cameras
+    #         scene._test_cameras = test_views
+    #         print(f"Created {len(test_views)} test views from training views")
     
     # Define background color
     bg_color = [1, 1, 1] if dataset.white_background else [0, 0, 0]

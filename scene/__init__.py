@@ -41,7 +41,7 @@ class Scene:
 
         self.train_cameras = {}
         self.test_cameras = {}
-
+        
         if os.path.exists(os.path.join(args.source_path, "sparse")):
             scene_info = sceneLoadTypeCallbacks["Colmap"](args.source_path, args.images, args.eval, 
                                                           llffhold=llffhold, override_train_idxs=override_train_idxs, override_test_idxs=override_test_idxs)
@@ -66,6 +66,7 @@ class Scene:
                 json.dump(json_cams, file)
 
         num_views = len(scene_info.train_cameras)
+        print(len(scene_info.test_cameras))
         self.all_train_set = set(range(num_views))
         self.train_idxs = list(range(num_views))
         if shuffle:
