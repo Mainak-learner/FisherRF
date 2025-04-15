@@ -1,330 +1,435 @@
+#
+# Copyright (C) 2023, Inria
+# GRAPHDECO research group, https://team.inria.fr/graphdeco
+# All rights reserved.
+#
+# This software is free for non-commercial, research and evaluation use 
+# under the terms of the LICENSE.md file.
+#
+# For inquiries contact  george.drettakis@inria.fr
+#
+
 import torch
 import os
-import numpy as np
-from scene import Scene, GaussianModel
-from gaussian_renderer import render, forward_k_times, modified_render
-from utils.general_utils import safe_state
-from arguments import ModelParams, PipelineParams, OptimizationParams
-from argparse import ArgumentParser
-import torchvision
-import json
-from einops import reduce, repeat
-import matplotlib.pyplot as plt
 from tqdm import tqdm
+from os import makedirs
+from gaussian_renderer import render, forward_k_times
+import torchvision
+from utils.general_utils import safe_state
+from argparse import ArgumentParser
+from arguments import ModelParams, PipelineParams, get_combined_args
+from gaussian_renderer import GaussianModel
+import numpy as np
+from utils.camera_utils import rand_rotation_matrix
+from scene.cameras import Camera
+from gaussian_renderer import modified_render
+from einops import reduce, repeat, rearrange
+import seaborn as sns
+import matplotlib.pyplot as plt
+import itertools
+from active.schema import schema_dict, override_test_idxs_dict, override_train_idxs_dict
+from scene import Scene
 import random
 
-
-def capture(gaussians):
-    """Captures the current state of the gaussians model."""
+def capture(self):
     return (
-        gaussians.active_sh_degree,
-        gaussians._xyz,
-        gaussians._features_dc,
-        gaussians._features_rest,
-        gaussians._scaling,
-        gaussians._rotation,
-        gaussians._opacity,
-        gaussians.max_radii2D,
-        gaussians.xyz_gradient_accum,
-        gaussians.denom,
+        self.active_sh_degree,
+        self._xyz,
+        self._features_dc,
+        self._features_rest,
+        self._scaling,
+        self._rotation,
+        self._opacity,
+        self.max_radii2D,
+        self.xyz_gradient_accum,
+        self.denom,
+        # self.optimizer.state_dict(),
+        # self.spatial_lr_scale,
     )
-
-
-def load_model(checkpoint_path, dataset, opt):
-    """Load a trained Gaussian Splatting model from checkpoint."""
-    # Initialize the Gaussian model - match the original code
-    is_variational = True  # Set to True to match the second script
-    gaussians = GaussianModel(dataset.sh_degree, is_variational=is_variational)
-    
-    # # Ensure dataset parameters are properly set
-    # if not hasattr(dataset, 'dataset_name') or dataset.dataset_name is None:
-    #     dataset.dataset_name = "BLENDER"
-    
-    # if not hasattr(dataset, 'source_path') or dataset.source_path == "":
-    #     dataset.source_path = os.path.dirname(checkpoint_path)
-    
-    # Create scene with simple parameters - matching original code
-    iteration = opt.iterations if hasattr(opt, 'iterations') else -1
-    print(f"Loading trained model at iteration {iteration}")
-    
-    # Simple scene creation matching the original code
-    scene = Scene(dataset, gaussians, load_iteration=iteration, shuffle=False)
-    
-    # Now load the model checkpoint
-    if os.path.exists(checkpoint_path):
-        print(f"Loading checkpoint from {checkpoint_path}")
-        ckpt_dict = torch.load(checkpoint_path, weights_only=False)
-        gaussians.restore(ckpt_dict["model_params"], opt)
-        print(f"Loaded checkpoint successfully with {gaussians._xyz.shape[0]} gaussians")
-    else:
-        raise FileNotFoundError(f"Checkpoint not found at {checkpoint_path}")
-    
-    # Print camera counts for debugging
-    print(f"Scene loaded with {len(scene.getTrainCameras())} train cameras and {len(scene.getTestCameras())} test cameras")
-    
-    return gaussians, scene
-
 
 @torch.no_grad()
 def render_uncertainty(view, gaussians, pipeline, background, hessian_color):
-    """Render uncertainty using FisherRF method."""
-    # Get standard render and pixel_gaussian_counter
     render_pkg = modified_render(view, gaussians, pipeline, background)
     pred_img = render_pkg["render"]
+    # pred_img.backward(gradient=torch.ones_like(pred_img))
     pixel_gaussian_counter = render_pkg["pixel_gaussian_counter"]
-    
-    # Render with hessian-based colors
+
     render_pkg = modified_render(view, gaussians, pipeline, background, override_color=hessian_color)
-    
-    # Calculate uncertainty map
-    uncertainty_map = reduce(render_pkg["render"], "c h w -> h w", "mean")
-    
-    return pred_img, uncertainty_map, pixel_gaussian_counter, render_pkg["depth"]
 
+    uncertanity_map = reduce(render_pkg["render"], "c h w -> h w", "mean")
 
-def precompute_H_per_gaussian(gaussians, scene, pipeline, background):
-    """Precompute the Hessian values per Gaussian for uncertainty estimation."""
-    # Use both train and test views for better estimation
-    train_views = scene.getTrainCameras()
-    test_views = scene.getTestCameras()
+    return pred_img, uncertanity_map, pixel_gaussian_counter, render_pkg["depth"]
+
+def render_set(model_path, name, iteration, train_views, test_views, gaussians, pipeline, background, perturb_scale=1., camera_extent=None, args=None):
+    render_path = os.path.join(model_path, "renders")
+    eval_path = os.path.join(model_path, "eval")
+
+    makedirs(render_path, exist_ok=True)
+    makedirs(eval_path, exist_ok=True)
+
+    params = capture(gaussians)[1:7]
+    name2idx = {"xyz": 0, "rgb": 1, "sh": 2, "scale": 3, "rotation": 4, "opacity": 5}
+    xyz = params[0]
+    # filter_out_idx = [name2idx[k] for k in ["rotation", "rgb", "sh"]]
+    filter_out_idx = [name2idx[k] for k in ["rotation", "scale", "xyz", "opacity"]]
+    params = [p.requires_grad_(True) for i, p in enumerate(params) if i not in filter_out_idx]
+    optim = torch.optim.SGD(params, 0.)
+    gaussians.optimizer = optim
+    device = params[0].device
+    # H_train = torch.zeros(sum(p.numel() for p in params), device=params[0].device, dtype=params[0].dtype)
+    H_per_gaussian = torch.zeros(params[0].shape[0], device=params[0].device, dtype=params[0].dtype)
+
+    if not args.depth_only:
+        # TODO: We can also use all the views, here the train views are just a subset of training cameras
+        for idx, view in enumerate(tqdm(itertools.chain(train_views, test_views), desc="Rendering progress")):
+
+            # rendering = render(view, gaussians, pipeline, background)["render"]
+
+            render_pkg = modified_render(view, gaussians, pipeline, background)
+            pred_img = render_pkg["render"]
+            pred_img.backward(gradient=torch.ones_like(pred_img))
+            pixel_gaussian_counter = render_pkg["pixel_gaussian_counter"]
+            # render_pkg = modified_render(view, gaussians, pipeline, background, override_color=torch.ones_like(params[1]))
+            H_per_gaussian += sum([reduce(p.grad.detach(), "n ... -> n", "sum") for p in params])
+            # render_pkg = modified_render(view, gaussians, pipeline, background, override_color=H_per_gaussian.detach())
+            optim.zero_grad(set_to_none = True) 
+
+            split = "train" if idx < len(train_views) else "test"
+
+            torchvision.utils.save_image(pred_img.detach(), os.path.join(render_path, f"{split}_{view.image_name}.png"))
+    else:
+        H_per_gaussian += 1
+
+    hessian_color = repeat(H_per_gaussian.detach(), "n -> n c", c=3)
     
-    print(f"Using {len(train_views)} train views and {len(test_views)} test views for Hessian computation")
+    with torch.no_grad():
+        for idx, view in enumerate(tqdm(test_views, desc="Rendering on test set")):
+            
+            to_homo = lambda x: torch.cat([x, torch.ones(x.shape[:-1] + (1, ), dtype=x.dtype, device=x.device)], dim=-1)
+            pts3d_homo = to_homo(xyz)
+            pts3d_cam = pts3d_homo @ view.world_view_transform
+            gaussian_depths = pts3d_cam[:, 2, None]
+
+            cur_hessian_color = hessian_color * gaussian_depths.clamp(min=0)
+
+            pred_img, uncertanity_map, pixel_gaussian_counter, depth = render_uncertainty(view, gaussians, pipeline, background, cur_hessian_color)
+
+            # sns.heatmap(torch.log(uncertanity_map / pixel_gaussian_counter).clamp(min=0).detach().cpu(), square=True)
+            # plt.savefig(f"./uncern_all.jpg")
+            # torchvision.utils.save_image(pred_img.detach(), os.path.join(render_path, f"{split}_{idx:05d}.png"))
+            if args.depth_only:
+                sns.heatmap(depth.detach().cpu(), square=True)
+                plt.savefig(os.path.join(eval_path, f"depth_viz_{view.image_name}.jpg"))
+            else:
+                sns.heatmap(torch.log(uncertanity_map / pixel_gaussian_counter).detach().cpu(), square=True)
+                plt.savefig(os.path.join(eval_path, f"heatmap_{view.image_name}.jpg"))
+            plt.clf()
+
+            np.savez(os.path.join(eval_path, f"uncertainty_{idx:03d}_{view.image_name}.npz"), 
+                     uncertanity_map=uncertanity_map.cpu(), pixel_gaussian_counter=pixel_gaussian_counter.cpu(),
+                     depth=depth.cpu(),
+                     )
+
+def render_set_current(model_path, name, iteration, train_views, test_views, gaussians, pipeline, background, perturb_scale=1., camera_extent=None, args=None):
+    eval_path = os.path.join(model_path, "eval")
+
+    makedirs(eval_path, exist_ok=True)
+
+    params = capture(gaussians)[1:7]
+    name2idx = {"xyz": 0, "rgb": 1, "sh": 2, "scale": 3, "rotation": 4, "opacity": 5}
+    filter_out_idx = [name2idx[k] for k in ["rotation"]]
+    params = [p.requires_grad_(True) for i, p in enumerate(params) if i not in filter_out_idx]
+    optim = torch.optim.SGD(params, 0.)
+    gaussians.optimizer = optim
+    device = params[0].device
+
+    for idx, view in enumerate(tqdm(test_views, desc="Rendering on test set")):
+
+        render_pkg = modified_render(view, gaussians, pipeline, background)
+        pred_img = render_pkg["render"]
+        pred_img.backward(gradient=torch.ones_like(pred_img))
+        pixel_gaussian_counter = render_pkg["pixel_gaussian_counter"]
+        H_per_gaussian = sum(reduce(p.grad.detach(), "n ... -> n", "sum") for p in params)
+
+        with torch.no_grad():
+            hessian_color = repeat(H_per_gaussian.detach(), "n -> n c", c=3)
+
+            # compute depth of gaussian in current view
+            to_homo = lambda x: torch.cat([x, torch.ones(x.shape[:-1] + (1, ), dtype=x.dtype, device=x.device)], dim=-1)
+            pts3d_homo = to_homo(params[0])
+            pts3d_cam = pts3d_homo @ view.world_view_transform
+            gaussian_depths = pts3d_cam[:, 2, None]
+
+            hessian_color = hessian_color * gaussian_depths
+
+            render_pkg = modified_render(view, gaussians, pipeline, background, override_color=hessian_color)
+
+            uncertanity_map = reduce(render_pkg["render"], "c h w -> h w", "mean")
+            depth = render_pkg["depth"]
+
+            # sns.heatmap(torch.log(uncertanity_map / pixel_gaussian_counter).clamp(min=0).detach().cpu(), square=True)
+            # plt.savefig(f"./uncern.jpg")
+            # plt.savefig(f"./uncern_all.jpg")
+            plt.clf()
+
+            torchvision.utils.save_image(pred_img.detach(), os.path.join(eval_path, f"render_{view.image_name}.png"))
+            sns.heatmap(torch.log(uncertanity_map / pixel_gaussian_counter).clamp(min=0).detach().cpu(), square=True)
+            plt.savefig(os.path.join(eval_path, f"heatmap_{view.image_name}.jpg"))
+            plt.clf()
+
+            np.savez(os.path.join(eval_path, f"uncertainty_{idx:03d}_{view.image_name}.npz"), 
+                     uncertanity_map=uncertanity_map.cpu(), pixel_gaussian_counter=pixel_gaussian_counter.cpu(),
+                     depth=depth.cpu(),
+                     )
+
+            optim.zero_grad(set_to_none = True) 
+
+# New function that combines FisherRF and variational uncertainty computation
+def render_combined_uncertainty(model_path, name, iteration, train_views, test_views, gaussians, pipeline, background, num_views=5, perturb_scale=1., camera_extent=None, args=None):
+    """Render and compare both FisherRF and variational uncertainty visualization."""
+    render_path = os.path.join(model_path, "renders")
+    eval_path = os.path.join(model_path, "eval")
+    combined_path = os.path.join(model_path, "combined_uncertainty")
+
+    makedirs(render_path, exist_ok=True)
+    makedirs(eval_path, exist_ok=True)
+    makedirs(combined_path, exist_ok=True)
+
+    # If no test views, use a subset of train views instead
+    if len(test_views) == 0:
+        print("No test views found. Using a subset of training views...")
+        if len(train_views) <= num_views:
+            selected_views = train_views
+        else:
+            # Randomly select views
+            selected_indices = random.sample(range(len(train_views)), num_views)
+            selected_views = [train_views[i] for i in selected_indices]
+    else:
+        # Use actual test views
+        if len(test_views) <= num_views:
+            selected_views = test_views
+        else:
+            # Randomly select views
+            selected_indices = random.sample(range(len(test_views)), num_views)
+            selected_views = [test_views[i] for i in selected_indices]
     
-    # Get parameters to compute gradients for
-    # Exclude rotation parameters (problematic for uncertainty)
-    params = [
-        gaussians._xyz, 
-        gaussians._features_dc, 
-        gaussians._features_rest, 
-        gaussians._scaling,
-        gaussians._opacity
-    ]
-    
-    # Set up parameters for gradient computation
-    params = [p.requires_grad_(True) for p in params]
+    print(f"Selected {len(selected_views)} views for uncertainty visualization")
+
+    # Compute FisherRF uncertainty
+    # Extract parameters
+    params = capture(gaussians)[1:7]
+    name2idx = {"xyz": 0, "rgb": 1, "sh": 2, "scale": 3, "rotation": 4, "opacity": 5}
+    xyz = params[0]
+    # Exclude rotation, scale, xyz, opacity from gradient computation
+    filter_out_idx = [name2idx[k] for k in ["rotation", "scale", "xyz", "opacity"]]
+    params = [p.requires_grad_(True) for i, p in enumerate(params) if i not in filter_out_idx]
     optim = torch.optim.SGD(params, 0.)
     gaussians.optimizer = optim
     device = params[0].device
     
-    # Initialize tensor to accumulate Hessian diagonals
-    H_per_gaussian = torch.zeros(gaussians._xyz.shape[0], device=device, dtype=params[0].dtype)
-    
-    # Only use a subset of views for computational efficiency if needed
-    all_views = train_views + test_views
-    
-    # Compute Hessian approximation
-    for view in tqdm(all_views, desc="Precomputing H_per_gaussian"):
-        # Render image
-        render_pkg = modified_render(view, gaussians, pipeline, background)
-        pred_img = render_pkg["render"]
-        
-        # Compute gradient
-        pred_img.backward(gradient=torch.ones_like(pred_img))
-        
-        # Accumulate gradient norms per Gaussian
-        H_per_gaussian += sum([reduce(p.grad.detach(), "n ... -> n", "sum") for p in params])
-        
-        # Zero gradients for next iteration
-        optim.zero_grad(set_to_none=True)
-    
-    # Normalize by number of views    
-    return H_per_gaussian.detach()
+    # Initialize H_per_gaussian tensor
+    H_per_gaussian = torch.zeros(params[0].shape[0], device=params[0].device, dtype=params[0].dtype)
 
+    # Compute H_per_gaussian using all views (train + test)
+    if not args.depth_only:
+        print("Computing FisherRF uncertainty with all views...")
+        for idx, view in enumerate(tqdm(itertools.chain(train_views, test_views), desc="Computing FisherRF uncertainty")):
+            render_pkg = modified_render(view, gaussians, pipeline, background)
+            pred_img = render_pkg["render"]
+            pred_img.backward(gradient=torch.ones_like(pred_img))
+            H_per_gaussian += sum([reduce(p.grad.detach(), "n ... -> n", "sum") for p in params])
+            optim.zero_grad(set_to_none=True)
+    else:
+        H_per_gaussian += 1
 
-def render_uncertainty_from_test_views(scene, gaussians, pipe, background, output_dir, H_per_gaussian, num_views=5):
-    """Render and compare uncertainty estimates from both FisherRF and variational methods."""
-    os.makedirs(output_dir, exist_ok=True)
+    # Prepare color from Hessian
+    hessian_color = repeat(H_per_gaussian.detach(), "n -> n c", c=3)
     
-    # Get test views
-    test_views = scene.getTestCameras()
-    print(f"Total test views available: {len(test_views)}")
-    
-    # # If no test views are available, use a subset of train views
-    # if len(test_views) == 0:
-    #     print("No test views found. Using train views instead.")
-    #     train_views = scene.getTrainCameras()
-    #     print(f"Total train views available: {len(train_views)}")
-        
-    #     # Use train views as test views
-    #     test_views = train_views
-    
-    # Get XYZ of gaussians for depth calculation
-    xyz = gaussians._xyz
-    
-    # # Randomly select views if needed
-    # if len(test_views) <= num_views:
-    #     selected_views = test_views
-    # else:
-    #     selected_indices = random.sample(range(len(test_views)), num_views)
-    #     selected_views = [test_views[i] for i in selected_indices]
-    
-    # print(f"Selected {len(selected_views)} views for uncertainty visualization")
-    
-    # Render each view
-    for idx, viewpoint in enumerate(test_views):
-        print(f"Processing test view {idx}: {viewpoint.image_name}")
-        
-        # Variational Uncertainty (if model is variational)
-        if hasattr(gaussians, 'n_models') and gaussians.n_models > 1:
-            variational_pkg = forward_k_times(viewpoint, gaussians, pipe, background, k=gaussians.n_models)
-            var_rgb = variational_pkg["comp_rgb"].detach()
-            var_uncertainty = variational_pkg["comp_std"].detach()
-            var_uncertainty = var_uncertainty.mean(dim=0, keepdim=True)
-        else:
-            # If not variational, just use standard render
-            var_pkg = render(viewpoint, gaussians, pipe, background)
-            var_rgb = var_pkg["render"].detach()
-            var_uncertainty = torch.zeros((1, var_rgb.shape[1], var_rgb.shape[2]), device=var_rgb.device)
-        
-        # FisherRF Uncertainty with precomputed H_per_gaussian
-        # Convert points to homogeneous coordinates
-        to_homo = lambda x: torch.cat([x, torch.ones(x.shape[:-1] + (1,), dtype=x.dtype, device=x.device)], dim=-1)
-        pts3d_homo = to_homo(xyz)
-        
-        # Transform to camera space
-        pts3d_cam = pts3d_homo @ viewpoint.world_view_transform
-        
-        # Get depth values and ensure they are positive
-        gaussian_depths = pts3d_cam[:, 2, None].clamp(min=0)
-        
-        # Create color tensor from Hessian values
-        hessian_color = repeat(H_per_gaussian, "n -> n c", c=3)
-        
-        # Scale by depth for better visualization
-        depth_weighted_hessian = hessian_color * gaussian_depths
-        
-        # Render with Hessian-weighted colors
-        fisher_render_pkg = render(viewpoint, gaussians, pipe, background, override_color=depth_weighted_hessian)
-        fisher_rgb = fisher_render_pkg["render"]
-        
-        # Get pixel Gaussian counter for normalization
-        render_pkg = modified_render(viewpoint, gaussians, pipe, background)
-        pixel_gaussian_counter = render_pkg["pixel_gaussian_counter"]
-        
-        # Calculate Fisher uncertainty map
-        fisher_uncertainty = reduce(fisher_render_pkg["render"], "c h w -> h w", "mean").detach()
-        fisher_uncertainty = torch.log(fisher_uncertainty / pixel_gaussian_counter.clamp(min=1e-6))
-        
-        # Get ground truth image if available
-        gt_image = viewpoint.original_image.cuda() if viewpoint.original_image is not None else None
-        
-        # Normalize uncertainties to 0-1 range for visualization
-        var_min, var_max = var_uncertainty.min(), var_uncertainty.max()
-        var_uncertainty_norm = (var_uncertainty - var_min) / (var_max - var_min + 1e-6)
-        
-        fisher_min, fisher_max = fisher_uncertainty.min(), fisher_uncertainty.max()
-        fisher_uncertainty_norm = (fisher_uncertainty - fisher_min) / (fisher_max - fisher_min + 1e-6)
-        
-        # Match dimensions for consistent visualization
-        var_uncertainty_norm = var_uncertainty_norm.squeeze(0)
-        fisher_uncertainty_norm = fisher_uncertainty_norm.unsqueeze(0)
-        
-        # Convert to numpy for plotting
-        render_img_np = var_rgb.cpu().numpy().transpose(1, 2, 0)
-        fisher_unc_np = fisher_uncertainty_norm.squeeze(0).cpu().numpy()
-        var_unc_np = var_uncertainty_norm.cpu().numpy()
-        
-        # Create visualization plots
-        if gt_image is not None:
-            fig, axs = plt.subplots(1, 4, figsize=(20, 5))
-            gt_np = gt_image.cpu().numpy().transpose(1, 2, 0)
-            axs[0].imshow(gt_np)
-            axs[0].set_title(f"Ground Truth - View {viewpoint.image_name}")
-            axs[0].axis('off')
+    # Render uncertainty visualizations for selected views
+    with torch.no_grad():
+        for idx, view in enumerate(tqdm(selected_views, desc="Rendering combined uncertainty visualization")):
+            # Compute depth for FisherRF
+            to_homo = lambda x: torch.cat([x, torch.ones(x.shape[:-1] + (1,), dtype=x.dtype, device=x.device)], dim=-1)
+            pts3d_homo = to_homo(xyz)
+            pts3d_cam = pts3d_homo @ view.world_view_transform
+            gaussian_depths = pts3d_cam[:, 2, None]
             
-            axs[1].imshow(render_img_np)
-            axs[1].set_title(f"Render - View {viewpoint.image_name}")
-            axs[1].axis('off')
+            # Scale hessian color by depth
+            cur_hessian_color = hessian_color * gaussian_depths.clamp(min=0)
             
-            axs[2].imshow(fisher_unc_np, cmap='viridis')
-            axs[2].set_title(f"FisherRF Uncertainty")
-            axs[2].axis('off')
+            # Render FisherRF uncertainty
+            pred_img, fisher_uncertainty_map, pixel_gaussian_counter, depth = render_uncertainty(
+                view, gaussians, pipeline, background, cur_hessian_color
+            )
             
-            axs[3].imshow(var_unc_np, cmap='viridis')
-            axs[3].set_title(f"Variational Uncertainty")
-            axs[3].axis('off')
-        else:
-            fig, axs = plt.subplots(1, 3, figsize=(15, 5))
-            axs[0].imshow(render_img_np)
-            axs[0].set_title(f"Render - View {viewpoint.image_name}")
-            axs[0].axis('off')
+            # Normalize FisherRF uncertainty for visualization
+            fisher_unc_norm = torch.log(fisher_uncertainty_map / pixel_gaussian_counter.clamp(min=1e-6))
             
-            axs[1].imshow(fisher_unc_np, cmap='viridis')
-            axs[1].set_title(f"FisherRF Uncertainty")
-            axs[1].axis('off')
-            
-            axs[2].imshow(var_unc_np, cmap='viridis')
-            axs[2].set_title(f"Variational Uncertainty")
-            axs[2].axis('off')
-        
-        plt.tight_layout()
-        plt.savefig(os.path.join(output_dir, f"comparison_{viewpoint.image_name}.png"))
-        plt.close()
-        
-        # Save raw data for further analysis
-        np.savez(os.path.join(output_dir, f"uncertainty_data_{viewpoint.image_name}.npz"), 
-                 fisher_uncertainty=fisher_uncertainty.cpu().numpy(),
-                 var_uncertainty=var_uncertainty.cpu().numpy() if hasattr(gaussians, 'n_models') else None,
-                 pixel_gaussian_counter=pixel_gaussian_counter.cpu().numpy(),
-                 depth=gaussian_depths.cpu().numpy()
+            # Render variational uncertainty if available
+            if hasattr(gaussians, 'n_models') and gaussians.n_models > 1:
+                # Variational Uncertainty
+                print(f"Computing variational uncertainty for view {idx}...")
+                variational_pkg = forward_k_times(view, gaussians, pipeline, background, k=gaussians.n_models)
+                var_rgb = variational_pkg["comp_rgb"].detach()
+                var_uncertainty = variational_pkg["comp_std"].detach()
+                # Convert to single-channel uncertainty
+                var_uncertainty_map = var_uncertainty.mean(dim=0)  # Shape: (height, width)
+                
+                # Create visualization
+                fig, axs = plt.subplots(2, 2, figsize=(12, 10))
+                
+                # Show RGB render
+                axs[0, 0].imshow(pred_img.permute(1, 2, 0).cpu().numpy())
+                axs[0, 0].set_title(f"Render - View {view.image_name}")
+                axs[0, 0].axis('off')
+                
+                # Show depth
+                axs[0, 1].imshow(depth.cpu().numpy(), cmap='viridis')
+                axs[0, 1].set_title("Depth")
+                axs[0, 1].axis('off')
+                
+                # Show FisherRF uncertainty
+                fisher_viz = fisher_unc_norm.clamp(min=0).cpu().numpy()
+                axs[1, 0].imshow(fisher_viz, cmap='viridis')
+                axs[1, 0].set_title("FisherRF Uncertainty")
+                axs[1, 0].axis('off')
+                
+                # Show variational uncertainty
+                var_viz = var_uncertainty_map.cpu().numpy()
+                axs[1, 1].imshow(var_viz, cmap='viridis')
+                axs[1, 1].set_title("Variational Uncertainty")
+                axs[1, 1].axis('off')
+                
+                plt.tight_layout()
+                plt.savefig(os.path.join(combined_path, f"combined_uncertainty_{view.image_name}.png"))
+                plt.close()
+                
+                # Save images separately
+                torchvision.utils.save_image(pred_img.detach(), os.path.join(combined_path, f"render_{view.image_name}.png"))
+                
+                # Save raw data for further analysis
+                np.savez(
+                    os.path.join(combined_path, f"data_{view.image_name}.npz"),
+                    fisher_uncertainty=fisher_unc_norm.cpu().numpy(),
+                    var_uncertainty=var_uncertainty_map.cpu().numpy(),
+                    pixel_gaussian_counter=pixel_gaussian_counter.cpu().numpy(),
+                    depth=depth.cpu().numpy()
                 )
+            else:
+                # Only FisherRF is available (no variational)
+                print("No variational model detected, rendering FisherRF uncertainty only")
+                
+                # Create visualization
+                fig, axs = plt.subplots(1, 3, figsize=(15, 5))
+                
+                # Show RGB render
+                axs[0].imshow(pred_img.permute(1, 2, 0).cpu().numpy())
+                axs[0].set_title(f"Render - View {view.image_name}")
+                axs[0].axis('off')
+                
+                # Show depth
+                axs[1].imshow(depth.cpu().numpy(), cmap='viridis')
+                axs[1].set_title("Depth")
+                axs[1].axis('off')
+                
+                # Show FisherRF uncertainty
+                fisher_viz = fisher_unc_norm.clamp(min=0).cpu().numpy()
+                axs[2].imshow(fisher_viz, cmap='viridis')
+                axs[2].set_title("FisherRF Uncertainty")
+                axs[2].axis('off')
+                
+                plt.tight_layout()
+                plt.savefig(os.path.join(combined_path, f"fisher_uncertainty_{view.image_name}.png"))
+                plt.close()
+                
+                # Save images separately
+                torchvision.utils.save_image(pred_img.detach(), os.path.join(combined_path, f"render_{view.image_name}.png"))
+                
+                # Save raw data for further analysis
+                np.savez(
+                    os.path.join(combined_path, f"data_{view.image_name}.npz"),
+                    fisher_uncertainty=fisher_unc_norm.cpu().numpy(),
+                    pixel_gaussian_counter=pixel_gaussian_counter.cpu().numpy(),
+                    depth=depth.cpu().numpy()
+                )
+
+def render_sets(dataset : ModelParams, iteration : int, pipeline : PipelineParams, args):
+    # Initialize Gaussian model - if args.use_variational is true, create variational model
+    is_variational = args.use_variational if hasattr(args, 'use_variational') else False
+    gaussians = GaussianModel(dataset.sh_degree, is_variational=is_variational)
+    print(f"Created {'variational' if is_variational else 'standard'} Gaussian model")
+
+    # Create scene with appropriate training and test views
+    if hasattr(args, 'override_idxs') and args.override_idxs is not None:
+        override_train_idxs = list(range(10_000))  # Use all frames for training
+        override_test_idxs = override_test_idxs_dict.get(args.override_idxs, [])
+        scene = Scene(dataset, gaussians, load_iteration=iteration, shuffle=False, 
+                     override_train_idxs=override_train_idxs, override_test_idxs=override_test_idxs)
+    else:
+        # Standard scene creation
+        scene = Scene(dataset, gaussians, load_iteration=iteration, shuffle=False)
+    
+    # Print camera counts
+    train_views = scene.getTrainCameras()
+    test_views = scene.getTestCameras()
+    print(f"Loaded scene with {len(train_views)} training views and {len(test_views)} test views")
+
+    # Set background color
+    bg_color = [1, 1, 1] if dataset.white_background else [0, 0, 0]
+    background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
+
+    # Render with appropriate method
+    if args.combined:
+        # New mode - render both FisherRF and variational uncertainty
+        render_combined_uncertainty(
+            dataset.model_path, "train", scene.loaded_iter, 
+            scene.getTrainCameras(), scene.getTestCameras(), 
+            gaussians, pipeline, background, 
+            num_views=args.num_views if hasattr(args, 'num_views') else 5,
+            camera_extent=scene.cameras_extent, args=args
+        )
+    elif args.current:
+        # Original "current" mode - compute uncertainty for each view independently
+        render_set_current(
+            dataset.model_path, "train", scene.loaded_iter, 
+            scene.getTrainCameras(), scene.getTestCameras(), 
+            gaussians, pipeline, background, 
+            camera_extent=scene.cameras_extent, args=args
+        )
+    else:
+        # Original mode - precompute uncertainty using all views, then visualize
+        render_set(
+            dataset.model_path, "train", scene.loaded_iter, 
+            scene.getTrainCameras(), scene.getTestCameras(), 
+            gaussians, pipeline, background, 
+            camera_extent=scene.cameras_extent, args=args
+        )
 
 
 if __name__ == "__main__":
-    # Set up command line argument parser - match the original code structure
-    parser = ArgumentParser(description="Render uncertainty from test views")
-    model = ModelParams(parser)
-    op = OptimizationParams(parser)
+    # Set up command line argument parser
+    parser = ArgumentParser(description="Testing script parameters")
+    model = ModelParams(parser, sentinel=True)
     pipeline = PipelineParams(parser)
     
-    # Add the same arguments as in the original render_uncertainty.py
-    parser.add_argument("--checkpoint", type=str, required=True, help="Path to trained checkpoint")
-    parser.add_argument("--output_dir", type=str, default="./uncertainty_renders", help="Output directory for renders")
-    parser.add_argument("--num_views", type=int, default=5, help="Number of test views to render")
-    parser.add_argument("--quiet", action="store_true", help="Disable progress output")
+    # Original arguments
+    parser.add_argument("--iteration", default=-1, type=int)
+    parser.add_argument("--quiet", action="store_true")
+    parser.add_argument("--perturb_scale", default=1., type=float)
+    parser.add_argument("--inflate_factor", default=5, type=int)
+    parser.add_argument("--override_idxs", type=str, help="special test idxs on uncertainty evaluation")
+    parser.add_argument("--depth_only", action="store_true", help="render depth only")
+    parser.add_argument("--current", action="store_true", help="render uncertainty from current view")
     
-    # Add options for handling the test view issue
-    parser.add_argument("--use_train_for_test", action="store_true", help="Use training views for testing")
+    # New arguments for variational mode
+    parser.add_argument("--use_variational", action="store_true", help="Use variational Gaussian model")
+    parser.add_argument("--combined", action="store_true", help="Render both FisherRF and variational uncertainty")
+    parser.add_argument("--num_views", type=int, default=5, help="Number of views to render for combined mode")
     
-    args = parser.parse_args()
-    
+    args = get_combined_args(parser)
+    print("Rendering " + args.model_path)
+
     # Initialize system state (RNG)
     safe_state(args.quiet)
-    
-    # Extract parameters
-    dataset = model.extract(args)
-    opt = op.extract(args)
-    pipe = pipeline.extract(args)
-    
-    # Load model
-    gaussians, scene = load_model(args.checkpoint, dataset, opt)
-    
-    # Check if we need to use training views for testing
-    test_views = scene.getTestCameras()
-    train_views = scene.getTrainCameras()
-    
-    # if len(test_views) == 0:
-    #     print("Warning: No test views found in the dataset!")
-    #     if args.use_train_for_test:
-    #         print("Using training views for testing as requested")
-    #         # Take a subset of train views to use as test views
-    #         num_test = min(20, len(train_views) // 5)  # Use up to 20 views or 20% of train views
-    #         # Choose evenly spaced views for diversity
-    #         test_indices = np.linspace(0, len(train_views)-1, num_test, dtype=int)
-    #         test_views = [train_views[i] for i in test_indices]
-    #         # Assign these views as test cameras
-    #         scene._test_cameras = test_views
-    #         print(f"Created {len(test_views)} test views from training views")
-    
-    # Define background color
-    bg_color = [1, 1, 1] if dataset.white_background else [0, 0, 0]
-    background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
-    
-    # Precompute H_per_gaussian using training and testing views
-    print("Precomputing Hessian values per Gaussian...")
-    H_per_gaussian = precompute_H_per_gaussian(gaussians, scene, pipe, background)
-    
-    # Render uncertainty from test views
-    print("Rendering uncertainty visualizations...")
-    render_uncertainty_from_test_views(scene, gaussians, pipe, background, args.output_dir, H_per_gaussian, args.num_views)
-    print(f"Uncertainty renders and plots saved to {args.output_dir}")
+
+    render_sets(model.extract(args), args.iteration, pipeline.extract(args), args)
