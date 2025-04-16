@@ -292,21 +292,25 @@ def render_combined_uncertainty(model_path, name, iteration, train_views, test_v
                 axs[0, 0].axis('off')
                 
                 # Show depth
-                axs[0, 1].imshow(depth.cpu().numpy(), cmap='viridis')
+                axs[0, 1].imshow(depth.cpu().numpy(), cmap='magma')
                 axs[0, 1].set_title("Depth")
                 axs[0, 1].axis('off')
+                plt.colorbar(depth, ax=axs[1, 0], fraction=0.046, pad=0.04)
                 
                 # Show FisherRF uncertainty
                 fisher_viz = fisher_unc_norm.clamp(min=0).cpu().numpy()
-                axs[1, 0].imshow(fisher_viz, cmap='viridis')
+                axs[1, 0].imshow(fisher_viz, cmap='magma')
                 axs[1, 0].set_title("FisherRF Uncertainty")
                 axs[1, 0].axis('off')
+                plt.colorbar(fisher_viz, ax=axs[1, 0], fraction=0.046, pad=0.04)
                 
                 # Show variational uncertainty
                 var_viz = var_uncertainty_map.cpu().numpy()
-                axs[1, 1].imshow(var_viz, cmap='viridis')
+                axs[1, 1].imshow(var_viz, cmap='magma')
                 axs[1, 1].set_title("Variational Uncertainty")
                 axs[1, 1].axis('off')
+                plt.colorbar(var_viz, ax=axs[1, 1], fraction=0.046, pad=0.04)
+
                 
                 plt.tight_layout()
                 plt.savefig(os.path.join(combined_path, f"combined_uncertainty_{view.image_name}.png"))
