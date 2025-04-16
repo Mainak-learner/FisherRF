@@ -209,7 +209,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 gaussians.max_radii2D[visibility_filter] = torch.max(gaussians.max_radii2D[visibility_filter], radii[visibility_filter])
                 gaussians.add_densification_stats(viewspace_point_tensor, visibility_filter)
 
-                if is_variational and iteration % 500 == 0 and iteration < 20000:
+                if is_variational and iteration % 1000 == 0 and iteration < 20000:
                     gaussians.spawn(scene.cameras_extent)
 
                 if cur_iter > opt.densify_from_iter and cur_iter % opt.densification_interval == 0:
