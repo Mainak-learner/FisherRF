@@ -235,7 +235,7 @@ def render_combined_uncertainty(model_path, name, iteration, train_views, test_v
     # Compute H_per_gaussian using all views (train + test)
     if not args.depth_only:
         print("Computing FisherRF uncertainty with all views...")
-        for idx, view in enumerate(tqdm(itertools.chain(train_views, test_views), desc="Computing FisherRF uncertainty")):
+        for idx, view in enumerate(tqdm(train_views, desc="Computing FisherRF uncertainty")):
             render_pkg = modified_render(view, gaussians, pipeline, background)
             pred_img = render_pkg["render"]
             pred_img.backward(gradient=torch.ones_like(pred_img))
@@ -383,7 +383,14 @@ def render_sets(dataset : ModelParams, iteration : int, pipeline : PipelineParam
     
     # Print camera counts
     train_views = scene.getTrainCameras()
-    test_views = scene.getTestCameras()
+
+    if hasattr(args, "pose_json") and args.pose_json:
+        print("Using custom poses from:", args.pose_json)
+        custom_views = load_custom_poses(args.pose_json, resolution=(dataset.image_height, dataset.image_width))
+        test_views = custom_views
+    else:
+        test_views = scene.getTestCameras()
+    
     print(f"Loaded scene with {len(train_views)} training views and {len(test_views)} test views")
 
     # Set background color
@@ -432,6 +439,7 @@ if __name__ == "__main__":
     parser.add_argument("--override_idxs", type=str, help="special test idxs on uncertainty evaluation")
     parser.add_argument("--depth_only", action="store_true", help="render depth only")
     parser.add_argument("--current", action="store_true", help="render uncertainty from current view")
+    parser.add_argument("--pose_json", type=str, default=None, help="Path to a JSON file of custom camera poses")
     
     # New arguments for variational mode
     parser.add_argument("--use_variational", action="store_true", help="Use variational Gaussian model")
