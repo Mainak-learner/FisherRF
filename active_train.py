@@ -212,6 +212,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 if cur_iter > opt.densify_from_iter and cur_iter % opt.densification_interval == 0:
                     size_threshold = 20 if cur_iter > opt.opacity_reset_interval else None
                     if is_variational and cur_iter % dataset.spawn_interval == 0:
+                        print("Here!")
                         gaussians.spawn(scene.cameras_extent)
                     gaussians.densify_and_prune(opt.densify_grad_threshold, args.min_opacity, scene.cameras_extent, size_threshold)
                 
