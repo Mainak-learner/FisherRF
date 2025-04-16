@@ -233,16 +233,16 @@ def render_combined_uncertainty(model_path, name, iteration, train_views, test_v
     H_per_gaussian = torch.zeros(params[0].shape[0], device=params[0].device, dtype=params[0].dtype)
 
     # Compute H_per_gaussian using all views (train + test)
-    if not args.depth_only:
-        print("Computing FisherRF uncertainty with all views...")
-        for idx, view in enumerate(tqdm(itertools.chain(train_views, test_views), desc="Computing FisherRF uncertainty")):
-            render_pkg = modified_render(view, gaussians, pipeline, background)
-            pred_img = render_pkg["render"]
-            pred_img.backward(gradient=torch.ones_like(pred_img))
-            H_per_gaussian += sum([reduce(p.grad.detach(), "n ... -> n", "sum") for p in params])
-            optim.zero_grad(set_to_none=True)
-    else:
-        H_per_gaussian += 1
+    # if not args.depth_only:
+    #     print("Computing FisherRF uncertainty with all views...")
+    #     for idx, view in enumerate(tqdm(itertools.chain(train_views, test_views), desc="Computing FisherRF uncertainty")):
+    #         render_pkg = modified_render(view, gaussians, pipeline, background)
+    #         pred_img = render_pkg["render"]
+    #         pred_img.backward(gradient=torch.ones_like(pred_img))
+    #         H_per_gaussian += sum([reduce(p.grad.detach(), "n ... -> n", "sum") for p in params])
+    #         optim.zero_grad(set_to_none=True)
+    # else:
+    #     H_per_gaussian += 1
 
     # Prepare color from Hessian
     hessian_color = repeat(H_per_gaussian.detach(), "n -> n c", c=3)
