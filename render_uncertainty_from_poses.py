@@ -302,22 +302,22 @@ def render_combined_uncertainty(model_path, name, iteration, train_views, test_v
                 axs[0, 0].axis('off')
                 
                 # Show depth
-                depth = axs[0, 1].imshow(depth.cpu().numpy(), cmap='magma')
+                depth_img = axs[0, 1].imshow(depth.cpu().numpy(), cmap='magma')
                 axs[0, 1].set_title("Depth")
                 axs[0, 1].axis('off')
                 plt.colorbar(depth, ax=axs[0, 1], fraction=0.046, pad=0.04)
                 
                 # Show FisherRF uncertainty
-                fisher_viz = axs[1, 0].imshow(fisher_unc_norm.clamp(min=0).cpu().numpy(), cmap='magma')
+                fisher_viz_img = axs[1, 0].imshow(fisher_unc_norm.clamp(min=0).cpu().numpy(), cmap='magma')
                 axs[1, 0].set_title("FisherRF Uncertainty")
                 axs[1, 0].axis('off')
-                plt.colorbar(fisher_viz, ax=axs[1, 0], fraction=0.046, pad=0.04)
+                plt.colorbar(fisher_viz_img, ax=axs[1, 0], fraction=0.046, pad=0.04)
                 
                 # Show variational uncertainty
-                var_viz = axs[1, 1].imshow(var_uncertainty_map.cpu().numpy(), cmap='magma')  
+                var_viz_img = axs[1, 1].imshow(var_uncertainty_map.cpu().numpy(), cmap='magma')  
                 axs[1, 1].set_title("Variational Uncertainty")
                 axs[1, 1].axis('off')
-                plt.colorbar(var_viz, ax=axs[1, 1], fraction=0.046, pad=0.04)
+                plt.colorbar(var_viz_img, ax=axs[1, 1], fraction=0.046, pad=0.04)
 
                 
                 plt.tight_layout()
