@@ -414,7 +414,7 @@ class GaussianModel:
         optimizable_tensors = self.replace_tensor_to_optimizer(opacities_new, "opacity")
         self._opacity = optimizable_tensors["opacity"]
 
-    def load_ply(self, path):
+    def load_ply(self, path, extent):
         plydata = PlyData.read(path)
 
         xyz = np.stack((np.asarray(plydata.elements[0]["x"]),
@@ -470,6 +470,7 @@ class GaussianModel:
             self.mr_list = torch.tensor(data["mr_list"], dtype=torch.float, device="cuda", requires_grad=False)
         else:
             self.init_offset()
+            self.spawn(extent)
 
     def replace_tensor_to_optimizer(self, tensor, name):
         optimizable_tensors = {}
