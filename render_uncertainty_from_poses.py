@@ -273,7 +273,7 @@ def render_combined_uncertainty(model_path, name, iteration, train_views, test_v
                 print(f"Computing variational uncertainty for view {idx}...")
                 variational_pkg = forward_k_times(view, gaussians, pipeline, background, k=gaussians.n_models)
                 var_rgb = variational_pkg["comp_rgb"].detach()
-                var_uncertainty = variational_pkg["comp_std"].detach()
+                var_uncertainty = 10 * variational_pkg["comp_std"].detach()
                 # Convert to single-channel uncertainty
                 var_uncertainty_map = var_uncertainty.mean(dim=0)  # Shape: (height, width)
                 
