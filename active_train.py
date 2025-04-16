@@ -210,6 +210,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 gaussians.add_densification_stats(viewspace_point_tensor, visibility_filter)
 
                 if is_variational and cur_iter % dataset.spawn_interval == 0:
+                    print("Here!")
                     gaussians.spawn(scene.cameras_extent)
 
                 if cur_iter > opt.densify_from_iter and cur_iter % opt.densification_interval == 0:
