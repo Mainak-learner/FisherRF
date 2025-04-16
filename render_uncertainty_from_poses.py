@@ -397,8 +397,8 @@ def render_sets(dataset : ModelParams, iteration : int, pipeline : PipelineParam
 
     if hasattr(args, "pose_json") and args.pose_json:
         print("Using custom poses from:", args.pose_json)
-        fallback_res = (train_views[0].height, train_views[0].width)
-        custom_views = load_cameras_from_pose_file(args.pose_json, resolution=fallback_res)
+        fallback_res = (train_views[0].image_height, train_views[0].image_width)
+        custom_views = load_cameras_from_pose_file(args.pose_json, device="cuda", resolution=fallback_res)
         test_views = custom_views
     else:
         test_views = scene.getTestCameras()
