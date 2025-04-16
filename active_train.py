@@ -138,8 +138,8 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             gaussians.optimizer.zero_grad(set_to_none=True)
             first_iter, _ = load_checkpoint(init_ckpt_path, gaussians, scene, opt, ignore_train_idxs=True)
 
-            if is_variational:
-                gaussians.init_offset()
+            # if is_variational:
+            #     gaussians.init_offset()
             base_iter = iteration - 1
 
         iter_start.record()
@@ -209,7 +209,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 gaussians.max_radii2D[visibility_filter] = torch.max(gaussians.max_radii2D[visibility_filter], radii[visibility_filter])
                 gaussians.add_densification_stats(viewspace_point_tensor, visibility_filter)
 
-                if is_variational and iteration % 100 == 0:
+                if is_variational and iteration % 500 == 0:
                     gaussians.spawn(scene.cameras_extent)
 
                 if cur_iter > opt.densify_from_iter and cur_iter % opt.densification_interval == 0:
