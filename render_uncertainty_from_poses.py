@@ -305,7 +305,7 @@ def render_combined_uncertainty(model_path, name, iteration, train_views, test_v
                 depth_img = axs[0, 1].imshow(depth.cpu().numpy(), cmap='magma')
                 axs[0, 1].set_title("Depth")
                 axs[0, 1].axis('off')
-                plt.colorbar(depth, ax=axs[0, 1], fraction=0.046, pad=0.04)
+                plt.colorbar(depth_img, ax=axs[0, 1], fraction=0.046, pad=0.04)
                 
                 # Show FisherRF uncertainty
                 fisher_viz_img = axs[1, 0].imshow(fisher_unc_norm.clamp(min=0).cpu().numpy(), cmap='magma')
