@@ -264,14 +264,13 @@ class GaussianModel:
     def spawn(self, extent):
         if not self.is_variational:
             return
-        
-        print(f"[spawn] Activated {self.mr_list.sum().item()} / {self.mr_list.shape[0]} points")
         percent_base = self.spawn_percent_base  # Add to __init__ if missing: self.spawn_percent_base = 0.01
         min_opacity = self.spawn_min_opacity   # Add to __init__ if missing: self.spawn_min_opacity = 0.0005
         mr_mask = torch.norm(self.get_scaling, dim=1) > percent_base * extent
         self.mr_list = mr_mask.int()[..., None]
         transparent_mask = (self.get_opacity < min_opacity)[:, 0]
         self.mr_list[transparent_mask] = 0
+        print(f"[spawn] Activated {self.mr_list.sum().item()} / {self.mr_list.shape[0]} points")
 
     def init_offset(self): 
         if not self.is_variational:
