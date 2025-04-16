@@ -186,7 +186,7 @@ class GaussianModel:
         offset = torch.randn_like(xyz).cuda().requires_grad_(True)
         offset = offset * std + mean
 
-        print("DEBUG: mr_list sum =", self.mr_list.sum().item())
+        # print("DEBUG: mr_list sum =", self.mr_list.sum().item())
         # print("DEBUG: sample_model_ids:", sample_model_ids[:5].tolist())
         # print("DEBUG: Offset std (mean over all points):", std.mean().item())
         # print("DEBUG: Offset mean (mean over all points):", mean.mean().item())
