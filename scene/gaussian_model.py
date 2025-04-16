@@ -186,20 +186,21 @@ class GaussianModel:
         offset = torch.randn_like(xyz).cuda().requires_grad_(True)
         offset = offset * std + mean
 
-        print("DEBUG: sample_model_ids:", sample_model_ids[:5].tolist())
-        print("DEBUG: Offset std (mean over all points):", std.mean().item())
-        print("DEBUG: Offset mean (mean over all points):", mean.mean().item())
-        print("DEBUG: Offset sample for first point:", offset[0].detach().cpu().numpy())
-        # Find first index where mr_list == 1
-        active_idx = (self.mr_list[:, 0] == 1).nonzero(as_tuple=True)[0]
-        if len(active_idx) > 0:
-            idx = active_idx[0].item()
-            print(f"DEBUG: Using point index {idx} where mr_list == 1")
-            print("DEBUG: Offset sample:", offset[idx].detach().cpu().numpy())
-            print("DEBUG: Final XYZ (with offset):",
-                (xyz[idx] + self.mr_list[idx] * offset[idx]).detach().cpu().numpy())
-        else:
-            print("DEBUG: No active points found where mr_list == 1")
+        print("DEBUG: mr_list sum =", self.mr_list.sum().item())
+        # print("DEBUG: sample_model_ids:", sample_model_ids[:5].tolist())
+        # print("DEBUG: Offset std (mean over all points):", std.mean().item())
+        # print("DEBUG: Offset mean (mean over all points):", mean.mean().item())
+        # print("DEBUG: Offset sample for first point:", offset[0].detach().cpu().numpy())
+        # # Find first index where mr_list == 1
+        # active_idx = (self.mr_list[:, 0] == 1).nonzero(as_tuple=True)[0]
+        # if len(active_idx) > 0:
+        #     idx = active_idx[0].item()
+        #     print(f"DEBUG: Using point index {idx} where mr_list == 1")
+        #     print("DEBUG: Offset sample:", offset[idx].detach().cpu().numpy())
+        #     print("DEBUG: Final XYZ (with offset):",
+        #         (xyz[idx] + self.mr_list[idx] * offset[idx]).detach().cpu().numpy())
+        # else:
+        #     print("DEBUG: No active points found where mr_list == 1")
 
         return xyz + self.mr_list * offset
 
