@@ -278,12 +278,21 @@ def render_combined_uncertainty(model_path, name, iteration, train_views, test_v
                 # Convert to single-channel uncertainty
                 var_uncertainty_map = var_uncertainty.mean(dim=0)  # Shape: (height, width)
                 
-                min_val = var_uncertainty_map.min()
-                max_val = var_uncertainty_map.max()
-                if max_val > min_val:
-                    var_uncertainty_map = (var_uncertainty_map - min_val) / (max_val - min_val)
+                min_var_val = var_uncertainty_map.min()
+                max_var_val = var_uncertainty_map.max()
+                if max_var_val > min_var_val:
+                    var_uncertainty_map = (var_uncertainty_map - min_var_val) / (max_var_val - min_var_val)
                 else:
                     var_uncertainty_map = torch.zeros_like(var_uncertainty_map)
+
+                min_fisher_val = var_uncertainty_map.min()
+                max_fisher_val = var_uncertainty_map.max()
+                if max_fisher_val > min_fisher_val:
+                    fisher_unc_norm = (fisher_unc_norm - min_fisher_val) / (max_fisher_val - min_fisher_val)
+                else:
+                    fisher_unc_norm = torch.zeros_like(fisher_unc_norm)
+                
+                prefix = "pose_" if args.pose_json else "combined_uncertainty_"
                 # Create visualization
                 fig, axs = plt.subplots(2, 2, figsize=(12, 10))
                 
@@ -296,7 +305,7 @@ def render_combined_uncertainty(model_path, name, iteration, train_views, test_v
                 axs[0, 1].imshow(depth.cpu().numpy(), cmap='magma')
                 axs[0, 1].set_title("Depth")
                 axs[0, 1].axis('off')
-                plt.colorbar(depth, ax=axs[1, 0], fraction=0.046, pad=0.04)
+                plt.colorbar(depth, ax=axs[0, 1], fraction=0.046, pad=0.04)
                 
                 # Show FisherRF uncertainty
                 fisher_viz = fisher_unc_norm.clamp(min=0).cpu().numpy()
@@ -314,7 +323,7 @@ def render_combined_uncertainty(model_path, name, iteration, train_views, test_v
 
                 
                 plt.tight_layout()
-                plt.savefig(os.path.join(combined_path, f"combined_uncertainty_{view.image_name}.png"))
+                plt.savefig(os.path.join(combined_path, f"{prefix}{view.image_name}.png"))
                 plt.close()
                 
                 # Save images separately
