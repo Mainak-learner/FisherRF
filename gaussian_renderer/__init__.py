@@ -197,7 +197,7 @@ def forward_k_times(viewpoint_camera, pc, pipe, bg_color, scaling_modifier=1.0, 
         out = modified_render(viewpoint_camera, pc, pipe, bg_color, scaling_modifier=1.0, override_color=None)
         rgb = out['render']
         if len(rgbs) != 0:
-            print(rgb == rgbs[-1])
+            print(torch.min(rgb - rgbs[-1]))
         depth = out['depth']
         depths.append(depth)
         rgbs.append(rgb)
