@@ -302,7 +302,8 @@ def render_combined_uncertainty(model_path, name, iteration, train_views, test_v
                 axs[0, 0].axis('off')
                 
                 # Show depth
-                axs[0, 1].imshow(depth.cpu().numpy(), cmap='magma')
+                depth = depth.cpu().numpy()
+                axs[0, 1].imshow(depth, cmap='magma')
                 axs[0, 1].set_title("Depth")
                 axs[0, 1].axis('off')
                 plt.colorbar(depth, ax=axs[0, 1], fraction=0.046, pad=0.04)
