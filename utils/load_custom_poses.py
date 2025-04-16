@@ -2,7 +2,7 @@ import json
 import numpy as np
 from scene.cameras import Camera
 
-def load_cameras_from_pose_file(path_to_json, resolution, device):
+def load_cameras_from_pose_file(path_to_json, device, resolution=(512, 512)):
     with open(path_to_json, 'r') as f:
         pose_dicts = json.load(f)
 
@@ -22,7 +22,8 @@ def load_cameras_from_pose_file(path_to_json, resolution, device):
             image=None,  # <-- This is correct
             image_name=f"pose_{idx:03d}",
             uid=idx,
-            data_device=device
+            data_device=device,
+            fallback_resolution=resolution
         )
         cameras.append(cam)
     return cameras
