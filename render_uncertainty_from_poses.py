@@ -24,6 +24,7 @@ from utils.camera_utils import rand_rotation_matrix
 from scene.cameras import Camera
 from gaussian_renderer import modified_render
 from einops import reduce, repeat, rearrange
+from utils.load_custom_poses import load_cameras_from_pose_file
 import seaborn as sns
 import matplotlib.pyplot as plt
 import itertools
@@ -386,7 +387,7 @@ def render_sets(dataset : ModelParams, iteration : int, pipeline : PipelineParam
 
     if hasattr(args, "pose_json") and args.pose_json:
         print("Using custom poses from:", args.pose_json)
-        custom_views = load_custom_poses(args.pose_json, resolution=(dataset.image_height, dataset.image_width))
+        custom_views = load_cameras_from_pose_file(args.pose_json, resolution=(dataset.image_height, dataset.image_width))
         test_views = custom_views
     else:
         test_views = scene.getTestCameras()
