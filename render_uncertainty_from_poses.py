@@ -277,6 +277,12 @@ def render_combined_uncertainty(model_path, name, iteration, train_views, test_v
                 # Convert to single-channel uncertainty
                 var_uncertainty_map = var_uncertainty.mean(dim=0)  # Shape: (height, width)
                 
+                min_val = var_uncertainty_map.min()
+                max_val = var_uncertainty_map.max()
+                if max_val > min_val:
+                    var_uncertainty_map = (var_uncertainty_map - min_val) / (max_val - min_val)
+                else:
+                    var_uncertainty_map = torch.zeros_like(var_uncertainty_map)
                 # Create visualization
                 fig, axs = plt.subplots(2, 2, figsize=(12, 10))
                 
