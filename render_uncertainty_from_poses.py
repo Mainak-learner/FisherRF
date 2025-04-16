@@ -411,7 +411,7 @@ def render_sets(dataset : ModelParams, iteration : int, pipeline : PipelineParam
         # New mode - render both FisherRF and variational uncertainty
         render_combined_uncertainty(
             dataset.model_path, "train", scene.loaded_iter, 
-            scene.getTrainCameras(), scene.getTestCameras(), 
+            train_views, test_views, 
             gaussians, pipeline, background, 
             num_views=args.num_views if hasattr(args, 'num_views') else 5,
             camera_extent=scene.cameras_extent, args=args
@@ -420,7 +420,7 @@ def render_sets(dataset : ModelParams, iteration : int, pipeline : PipelineParam
         # Original "current" mode - compute uncertainty for each view independently
         render_set_current(
             dataset.model_path, "train", scene.loaded_iter, 
-            scene.getTrainCameras(), scene.getTestCameras(), 
+            train_views, test_views, 
             gaussians, pipeline, background, 
             camera_extent=scene.cameras_extent, args=args
         )
@@ -428,7 +428,7 @@ def render_sets(dataset : ModelParams, iteration : int, pipeline : PipelineParam
         # Original mode - precompute uncertainty using all views, then visualize
         render_set(
             dataset.model_path, "train", scene.loaded_iter, 
-            scene.getTrainCameras(), scene.getTestCameras(), 
+            train_views, test_views, 
             gaussians, pipeline, background, 
             camera_extent=scene.cameras_extent, args=args
         )
