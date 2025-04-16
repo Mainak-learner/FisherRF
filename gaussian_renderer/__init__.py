@@ -192,14 +192,16 @@ def modified_render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch
 def forward_k_times(viewpoint_camera, pc, pipe, bg_color, scaling_modifier=1.0, override_color=None, k=10):
     rgbs = []
     depths = []
-
     for model_id in range(pc.n_models):
         pc.model_id = model_id
         out = modified_render(viewpoint_camera, pc, pipe, bg_color, scaling_modifier=1.0, override_color=None)
         rgb = out['render']
+        if len(rgbs) != 0:
+            print(rgb == rgbs[-1])
         depth = out['depth']
         depths.append(depth)
         rgbs.append(rgb)
+
 
     rgbs = torch.stack(rgbs, dim=0)
     depths = torch.stack(depths, dim=0)
