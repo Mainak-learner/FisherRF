@@ -185,6 +185,8 @@ class GaussianModel:
         mean = self.offsets["_xyz_offset"][..., sample_model_ids + self.n_models].mean(dim=-1)
         offset = torch.randn_like(xyz).cuda().requires_grad_(True)
         offset = offset * std + mean
+
+        print("offset: ", offset)
         return xyz + self.mr_list * offset
 
     def compute_kl_xyz(self): 
