@@ -2,8 +2,8 @@ import torch
 import numpy as np
 from torch.distributions import Categorical
 from scipy.special import iv
-from scene.utils import get_camera_centers  # or define your own camera center extractor
 from utils.image_utils import psnr
+from gaussian_renderer import render
 
 def vmf_normalization_const(kappa, dim=3):
     return kappa**(dim/2 - 1) / ((2 * np.pi)**(dim / 2) * iv(dim/2 - 1, kappa))
@@ -11,6 +11,15 @@ def vmf_normalization_const(kappa, dim=3):
 def vmf_density(x, mu, kappa):
     # Assumes x and mu are unit vectors
     return vmf_normalization_const(kappa) * np.exp(kappa * np.dot(mu, x))
+
+def get_camera_centers(cameras):
+    centers = []
+    for cam in cameras:
+        # Extract the camera-to-world matrix (assumes shape [4,4])
+        c2w = cam.world_view_transform.inverse().matrix  # [4,4]
+        center = c2w[:3, 3]  # camera position in world coords
+        centers.append(center.detach().cpu().numpy())
+    return centers
 
 class MvMFSelector:
     def __init__(self, args):
