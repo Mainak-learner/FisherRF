@@ -34,7 +34,7 @@ class MvMFSelector:
                 render(cam, gaussians, pipe, background)["render"], 0.0, 1.0
             )
             gt = torch.clamp(cam.original_image.to("cuda"), 0.0, 1.0)
-            value = psnr(rendered, gt).item()
+            value = psnr(rendered, gt).mean().item()
             errors.append(1.0 / value)  # Inverse PSNR as error
 
         return np.array(errors)
