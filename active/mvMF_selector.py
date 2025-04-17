@@ -41,6 +41,7 @@ class MvMFSelector:
 
     def nbvs(self, gaussians, scene, num_views, pipe, background, exit_func=None):
         V = scene.getTrainCameras()
+        candidate_views = list(scene.get_candidate_set())
         candidate_cams = scene.getCandidateCameras()
         
         camera_centers = get_camera_centers(V)
@@ -49,7 +50,7 @@ class MvMFSelector:
         # Assume scene.errors has the per-view error values
         m = self.compute_view_errors_psnr(gaussians, scene, pipe, background)
         m_hat = np.max(m) - m
-        m_hat = (m_hat - np.min(m_hat)) / (np.max(m_hat) - np.min(m_hat) + 1e-6)
+        m_hat = (np.max(m) - m) / (np.max(m) - m + 1e-6)
         alpha = torch.softmax(torch.tensor(m_hat) / self.temperature, dim=0).numpy()
 
         # Sample view index from categorical dist
@@ -64,7 +65,7 @@ class MvMFSelector:
             dists = [np.linalg.norm(x - v / np.linalg.norm(v)) for v in candidate_centers]
             closest_idx = np.argmin(dists)
             selected_ids.append(closest_idx)
-        return [candidate_cams[i] for i in selected_ids]
+        return [candidate_views[i] for i in selected_ids]
 
     def sample_vmf(self, mu, kappa):
         dim = mu.shape[0]
