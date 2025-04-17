@@ -414,7 +414,8 @@ def render_sets(dataset : ModelParams, iteration : int, pipeline : PipelineParam
             perturb_and_generate_poses(
                 train_json_path=args.generate_from_train_json,
                 output_json_path=tmp.name,
-                n_poses=args.num_generated_poses
+                n_poses=args.num_generated_poses,
+                radius_perturb=0.05, angle_perturb_deg=1.0
             )
             tmp_path = tmp.name
 
