@@ -16,7 +16,6 @@ from os import makedirs
 from gaussian_renderer import render, forward_k_times
 import torchvision
 from utils.general_utils import safe_state
-from scene.gen_custom_poses import extract_object_center, generate_spherical_poses
 from argparse import ArgumentParser
 from arguments import ModelParams, PipelineParams, get_combined_args
 from gaussian_renderer import GaussianModel
