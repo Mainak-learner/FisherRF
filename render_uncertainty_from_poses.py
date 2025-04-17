@@ -16,6 +16,7 @@ from os import makedirs
 from gaussian_renderer import render, forward_k_times
 import torchvision
 from utils.general_utils import safe_state
+from utils.gen_custom_poses import extract_object_center, generate_spherical_poses
 from argparse import ArgumentParser
 from arguments import ModelParams, PipelineParams, get_combined_args
 from gaussian_renderer import GaussianModel
@@ -285,14 +286,19 @@ def render_combined_uncertainty(model_path, name, iteration, train_views, test_v
                 else:
                     var_uncertainty_map = torch.zeros_like(var_uncertainty_map)
 
-                min_fisher_val = var_uncertainty_map.min()
-                max_fisher_val = var_uncertainty_map.max()
+                min_fisher_val = fisher_unc_norm.min()
+                max_fisher_val = fisher_unc_norm.max()
                 if max_fisher_val > min_fisher_val:
                     fisher_unc_norm = (fisher_unc_norm - min_fisher_val) / (max_fisher_val - min_fisher_val)
                 else:
                     fisher_unc_norm = torch.zeros_like(fisher_unc_norm)
                 
-                prefix = "pose_" if args.pose_json else "combined_uncertainty_"
+                if args.pose_json:
+                    prefix = "pose_"
+                elif args.generate_from_train_json:
+                    prefix = "generated_pose_"
+                else:
+                    prefix = "combined_uncertainty_"
                 # Create visualization
                 fig, axs = plt.subplots(2, 2, figsize=(12, 10))
                 
@@ -397,6 +403,21 @@ def render_sets(dataset : ModelParams, iteration : int, pipeline : PipelineParam
         fallback_res = (train_views[0].image_height, train_views[0].image_width)
         custom_views = load_cameras_from_pose_file(args.pose_json, device="cuda", resolution=fallback_res)
         test_views = custom_views
+    elif hasattr(args, "generate_from_train_json") and args.generate_from_train_json:
+        print("Generating spherical custom poses from:", args.generate_from_train_json)
+        center = extract_object_center(args.generate_from_train_json)
+        poses = generate_spherical_poses(center, radius=args.camera_radius, n_poses=args.num_generated_poses)
+
+        fallback_res = (train_views[0].image_height, train_views[0].image_width)
+        # Fake a JSON-style list so we can reuse `load_cameras_from_pose_file`
+        import tempfile
+        import json
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".json") as tmp:
+            json.dump(poses, tmp, indent=4)
+            tmp.flush()
+            custom_views = load_cameras_from_pose_file(tmp.name, resolution=fallback_res)
+
+        test_views = custom_views
     else:
         test_views = scene.getTestCameras()
     
@@ -449,6 +470,11 @@ if __name__ == "__main__":
     parser.add_argument("--depth_only", action="store_true", help="render depth only")
     parser.add_argument("--current", action="store_true", help="render uncertainty from current view")
     parser.add_argument("--pose_json", type=str, default=None, help="Path to a JSON file of custom camera poses")
+    parser.add_argument("--generate_from_train_json", type=str, default=None,
+                    help="Path to training transform JSON from which to auto-generate spherical poses")
+    parser.add_argument("--num_generated_poses", type=int, default=10, help="Number of generated custom poses")
+    parser.add_argument("--camera_radius", type=float, default=4.0, help="Radius of camera circle")
+
     
     # New arguments for variational mode
     parser.add_argument("--use_variational", action="store_true", help="Use variational Gaussian model")
