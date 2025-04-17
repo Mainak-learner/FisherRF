@@ -2,4 +2,4 @@ from .rand_selector import RandSelector
 from .H_reg import HRegSelector
 from .entropy_selector import EntropySelector
 
-methods_dict = {"rand": RandSelector, "H_reg": HRegSelector, "entropy": EntropySelector}
+methods_dict = {"rand": RandSelector, "H_reg": HRegSelector, "entropy": EntropySelector, "mvMF": MvMFSelector}

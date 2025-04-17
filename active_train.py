@@ -334,6 +334,10 @@ if __name__ == "__main__":
     parser.add_argument("--log_every_image", action="store_true", help="log every images during traing")
     parser.add_argument("--override_idxs", default=None, type=str, help="speical test idxs on uncertainty evaluation")
 
+    #For Error-Based-Uncertainty Measure:
+    parser.add_argument("--kappa", type=float, default=10.0, help="Concentration for von Mises-Fisher distribution")
+    parser.add_argument("--sampling_temperature", type=float, default=0.07, help="Softmax temperature for mvMF weights")
+
     args = parser.parse_args(sys.argv[1:])
     args.save_iterations.append(args.iterations)
     if args.log_every_image:
