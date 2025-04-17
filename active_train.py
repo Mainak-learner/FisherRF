@@ -108,23 +108,23 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
 
         num_views = schema.num_views_to_add(iteration)
         if num_views > 0:
-            try:
-                # For sectioned training
-                candidate_views_filter = getattr(schema, "candidate_views_filter")[iteration] if hasattr(schema, "candidate_views_filter") else None
-                scene.candidate_views_filter = candidate_views_filter
-                
-                if args.method == "entropy":
-                    completion_rate = iteration/opt.iterations
-                    # Because selection is time consumeing
-                    selected_views = active_method.nbvs(gaussians, scene, num_views, pipe, background, completion_rate, exit_func=csm.should_exit)
-                else:
-                    selected_views = active_method.nbvs(gaussians, scene, num_views, pipe, background, exit_func=csm.should_exit)
-            except RuntimeError as e:
-                print(e)
-                print("selector exited early")
-                # NOTE: we use iteration - 1 because the selector is not done
-                save_checkpoint(gaussians, iteration - 1, scene)
-                csm.requeue()
+        # try:
+            # For sectioned training
+            candidate_views_filter = getattr(schema, "candidate_views_filter")[iteration] if hasattr(schema, "candidate_views_filter") else None
+            scene.candidate_views_filter = candidate_views_filter
+            
+            if args.method == "entropy":
+                completion_rate = iteration/opt.iterations
+                # Because selection is time consumeing
+                selected_views = active_method.nbvs(gaussians, scene, num_views, pipe, background, completion_rate, exit_func=csm.should_exit)
+            else:
+                selected_views = active_method.nbvs(gaussians, scene, num_views, pipe, background, exit_func=csm.should_exit)
+            # except RuntimeError as e:
+            #     print(e)
+            #     print("selector exited early")
+            #     # NOTE: we use iteration - 1 because the selector is not done
+            #     save_checkpoint(gaussians, iteration - 1, scene)
+            #     csm.requeue()
 
             print(f"ITER {iteration}: selected views: {selected_views}")
             scene.train_idxs.extend(selected_views)
