@@ -416,7 +416,7 @@ def render_sets(dataset : ModelParams, iteration : int, pipeline : PipelineParam
             json.dump(poses, tmp, indent=4)
             tmp_path = tmp.name
 
-        custom_views = load_cameras_from_pose_file(tmp_path, resolution=fallback_res)
+        custom_views = load_cameras_from_pose_file(tmp_path, device="cuda", resolution=fallback_res)
 
         test_views = custom_views
     else:
