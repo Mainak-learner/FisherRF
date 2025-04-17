@@ -24,8 +24,9 @@ def perturb_and_generate_poses(train_json_path, output_json_path, n_poses=10, ra
     center = extract_object_center(train_json_path)
     poses = []
 
+    indices = np.random.choice(len(train_data['frames']), size=n_poses, replace=True)
     for i in range(n_poses):
-        base_frame = train_data['frames'][i % len(train_data['frames'])]
+        base_frame = train_data['frames'][indices[i]]
         transform = np.array(base_frame['transform_matrix'])  # 4x4
 
         # Camera position
