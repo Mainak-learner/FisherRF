@@ -412,10 +412,11 @@ def render_sets(dataset : ModelParams, iteration : int, pipeline : PipelineParam
         # Fake a JSON-style list so we can reuse `load_cameras_from_pose_file`
         import tempfile
         import json
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".json") as tmp:
+        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix=".json", encoding='utf-8') as tmp:
             json.dump(poses, tmp, indent=4)
-            tmp.flush()
-            custom_views = load_cameras_from_pose_file(tmp.name, resolution=fallback_res)
+            tmp_path = tmp.name
+
+        custom_views = load_cameras_from_pose_file(tmp_path, resolution=fallback_res)
 
         test_views = custom_views
     else:
