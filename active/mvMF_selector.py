@@ -64,7 +64,7 @@ class MvMFSelector:
             dists = [np.linalg.norm(x - v / np.linalg.norm(v)) for v in candidate_centers]
             closest_idx = np.argmin(dists)
             selected_ids.append(closest_idx)
-        return [candidate_cams[i] for i in selected_ids.tolist()]
+        return [candidate_cams[i] for i in selected_ids]
 
     def sample_vmf(self, mu, kappa):
         dim = mu.shape[0]
