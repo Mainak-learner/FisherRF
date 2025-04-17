@@ -403,24 +403,29 @@ def render_sets(dataset : ModelParams, iteration : int, pipeline : PipelineParam
         fallback_res = (train_views[0].image_height, train_views[0].image_width)
         custom_views = load_cameras_from_pose_file(args.pose_json, device="cuda", resolution=fallback_res)
         test_views = custom_views
-    elif hasattr(args, "generate_from_train_json") and args.generate_from_train_json:
-        print("Generating spherical custom poses from:", args.generate_from_train_json)
-        center = extract_object_center(args.generate_from_train_json)
-        poses = generate_spherical_poses(center, radius=args.camera_radius, n_poses=args.num_generated_poses)
 
-        fallback_res = (train_views[0].image_height, train_views[0].image_width)
-        # Fake a JSON-style list so we can reuse `load_cameras_from_pose_file`
+    elif hasattr(args, "generate_from_train_json") and args.generate_from_train_json:
+        print("Generating perturbed custom poses from:", args.generate_from_train_json)
+
+        # Generate perturbed poses and write to a temp file
         import tempfile
-        import json
-        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix=".json", encoding='utf-8') as tmp:
-            json.dump(poses, tmp, indent=4)
+        from scene.gen_custom_poses import perturb_and_generate_poses
+
+        with tempfile.NamedTemporaryFile(mode='w', suffix=".json", delete=False, encoding="utf-8") as tmp:
+            perturb_and_generate_poses(
+                train_json_path=args.generate_from_train_json,
+                output_json_path=tmp.name,
+                n_poses=args.num_generated_poses
+            )
             tmp_path = tmp.name
 
+        fallback_res = (train_views[0].image_height, train_views[0].image_width)
         custom_views = load_cameras_from_pose_file(tmp_path, device="cuda", resolution=fallback_res)
-
         test_views = custom_views
+
     else:
         test_views = scene.getTestCameras()
+
     
     print(f"Loaded scene with {len(train_views)} training views and {len(test_views)} test views")
 
