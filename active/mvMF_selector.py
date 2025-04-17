@@ -41,8 +41,7 @@ class MvMFSelector:
 
     def nbvs(self, gaussians, scene, num_views, pipe, background, exit_func=None):
         V = scene.getTrainCameras()
-        candidate_ids = scene.getCandidateCameras(return_ids=True)
-        candidate_cams = [scene.getCameraById(i) for i in candidate_ids]
+        candidate_cams = scene.getCandidateCameras()
         
         camera_centers = get_camera_centers(V)
         candidate_centers = get_camera_centers(candidate_cams)
@@ -64,8 +63,8 @@ class MvMFSelector:
             # Choose closest candidate view to x
             dists = [np.linalg.norm(x - v / np.linalg.norm(v)) for v in candidate_centers]
             closest_idx = np.argmin(dists)
-            selected_ids.append(candidate_ids[closest_idx])
-        return selected_ids
+            selected_ids.append(closest_idx)
+        return [candidate_cams[i] for i in selected_ids.tolist()]
 
     def sample_vmf(self, mu, kappa):
         dim = mu.shape[0]
