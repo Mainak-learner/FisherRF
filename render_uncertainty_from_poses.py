@@ -293,9 +293,9 @@ def render_combined_uncertainty(model_path, name, iteration, train_views, test_v
                 else:
                     fisher_unc_norm = torch.zeros_like(fisher_unc_norm)
                 
-                if args.pose_json:
+                if hasattr(args, "pose_json"):
                     prefix = "pose_"
-                elif args.generate_from_train_json:
+                elif hasattr(args, "generate_from_train_json"):
                     prefix = "generated_pose_"
                 else:
                     prefix = "combined_uncertainty_"
