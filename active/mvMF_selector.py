@@ -49,7 +49,7 @@ class MvMFSelector:
         
         # Assume scene.errors has the per-view error values
         m = self.compute_view_errors_psnr(gaussians, scene, pipe, background)
-        m_hat = np.max(m) - m
+        print(m)
         m_hat = (np.max(m) - m) / (np.max(m) - m + 1e-6)
         alpha = torch.softmax(torch.tensor(m_hat) / self.temperature, dim=0).numpy()
 
