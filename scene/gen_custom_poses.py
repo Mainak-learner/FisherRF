@@ -27,6 +27,7 @@ def perturb_and_generate_poses(scene, output_json_path, n_poses=10, radius_pertu
         base_pos = cam.camera_center.cpu().numpy()
         direction = base_pos - center
         radius = np.linalg.norm(direction)
+        print(radius)
         direction /= radius  # unit vector
 
         # Tangential perturbation
