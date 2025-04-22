@@ -4,7 +4,8 @@ from scipy.spatial.transform import Rotation as R
 
 def extract_object_center(scene):
     train_cameras = scene.getTrainCameras()
-    centers = [cam.camera_center.cpu().numpy() for cam in train_cameras]
+    test_cameras = scene.getTestCameras()
+    centers = [cam.camera_center.cpu().numpy() for cam in train_cameras] + [cam.camera_center.cpu().numpy() for cam in test_cameras]
     return np.mean(centers, axis=0)
 
 def look_at(camera_pos, target):
