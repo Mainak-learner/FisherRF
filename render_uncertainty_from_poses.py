@@ -415,7 +415,7 @@ def render_sets(dataset : ModelParams, iteration : int, pipeline : PipelineParam
                 train_json_path=args.generate_from_train_json,
                 output_json_path=tmp.name,
                 n_poses=args.num_generated_poses,
-                radius_perturb=0.0005, angle_perturb_deg=0.0005
+                radius_perturb=0.0005
             )
             tmp_path = tmp.name
 
