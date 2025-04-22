@@ -1,9 +1,10 @@
 import numpy as np
 import json
 from scipy.spatial.transform import Rotation as R
+from render_uncertainty_from_poses import capture
 
 def extract_object_center_from_gaussians(scene):
-    means = list(scene.gaussians.capture()[1:7])
+    means = list(capture(scene.gaussians)[1:7])
     return means[0].mean(0).detach().cpu().numpy()
 
 def look_at(view, target):
