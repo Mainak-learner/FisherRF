@@ -416,7 +416,7 @@ def render_sets(dataset : ModelParams, iteration : int, pipeline : PipelineParam
                 gaussians = gaussians,
                 output_json_path=tmp.name,
                 n_poses=args.num_generated_poses,
-                radius_perturb=0.0005
+                radius_perturb=args.tangent_perturb
             )
             tmp_path = tmp.name
 
@@ -480,7 +480,7 @@ if __name__ == "__main__":
     parser.add_argument("--generate_custom_from_test_train", type=str, default=None,
                     help="Path to training and test transform JSON from which to auto-generate spherical poses")
     parser.add_argument("--num_generated_poses", type=int, default=10, help="Number of generated custom poses")
-    parser.add_argument("--camera_radius", type=float, default=4.0, help="Radius of camera circle")
+    parser.add_argument("--tangent_perturb", type=float, default=0.05, help="Degree of perturbation along tangent")
 
     
     # New arguments for variational mode
