@@ -190,7 +190,7 @@ def render_combined_uncertainty(model_path, name, iteration, train_views, test_v
     """Render and compare both FisherRF and variational uncertainty visualization."""
     render_path = os.path.join(model_path, "renders")
     eval_path = os.path.join(model_path, "eval")
-    combined_path = os.path.join(model_path, "combined_uncertainty")
+    combined_path = os.path.join(model_path, "new_combined_uncertainty")
 
     makedirs(render_path, exist_ok=True)
     makedirs(eval_path, exist_ok=True)
