@@ -20,7 +20,7 @@ def look_at(camera_pos, target):
     return np.stack([right, up, forward], axis=1)
 
 def perturb_and_generate_poses(transform_json_path, output_json_path, n_poses=10, radius_perturb=0.05):
-    with open(transform_json_path, 'r') as f:
+    with open(transform_json_path + "/transforms_train.json", 'r') as f:
         train_data = json.load(f)
 
     center = extract_object_center(transform_json_path)
