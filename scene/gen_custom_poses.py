@@ -23,7 +23,7 @@ def look_at(camera_pos, target, up=np.array([0, 1, 0])):
 
 
 def perturb_and_generate_poses(scene, output_json_path, n_poses=10, radius_perturb=0.05):
-    center = np.zeros(3)
+    center = extract_object_center(scene)
     train_cams = scene.getTrainCameras()
     poses = []
 
@@ -31,12 +31,12 @@ def perturb_and_generate_poses(scene, output_json_path, n_poses=10, radius_pertu
     for i in range(n_poses):
         cam = train_cams[indices[i]]
         base_pos = cam.camera_center.cpu().numpy()
-        direction = base_pos - center
-        radius = np.linalg.norm(direction)
-        print(radius)
-        direction /= radius  # unit vector
+        
+        # Step 1: Use direction from ORIGIN
+        direction = base_pos / np.linalg.norm(base_pos)
+        radius = np.linalg.norm(base_pos)
 
-        # Tangential perturbation
+        # Step 2: Perturb on tangent of sphere centered at origin
         tangent = np.random.randn(3)
         tangent -= tangent.dot(direction) * direction
         tangent /= np.linalg.norm(tangent)
@@ -50,7 +50,10 @@ def perturb_and_generate_poses(scene, output_json_path, n_poses=10, radius_pertu
             new_direction[1] *= -1
             new_direction /= np.linalg.norm(new_direction)
 
-        new_pos = center + radius * new_direction
+        # Step 3: New camera position on sphere centered at origin
+        new_pos = radius * new_direction
+
+        # Step 4: Look at actual object center (possibly ≠ origin)
         R_mat = look_at(new_pos, center)
 
         poses.append({
