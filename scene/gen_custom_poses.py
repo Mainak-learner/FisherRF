@@ -2,8 +2,8 @@ import numpy as np
 import json
 from scipy.spatial.transform import Rotation as R
 
-def extract_object_center_from_gaussians(gaussians):
-    means = list(gaussians.capture()[1:7])
+def extract_object_center_from_gaussians(scene):
+    means = list(scene.gaussians.capture()[1:7])
     return means[0].mean(0).detach().cpu().numpy()
 
 def look_at(view, target):
@@ -29,7 +29,7 @@ def look_at(view, target):
 
 
 def perturb_and_generate_poses(scene, gaussians, output_json_path, n_poses=10, radius_perturb=0.05):
-    center = extract_object_center_from_gaussians(gaussians)
+    center = extract_object_center_from_gaussians(scene)
     train_cams = scene.getTrainCameras()
     poses = []
 
