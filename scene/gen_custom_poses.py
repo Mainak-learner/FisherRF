@@ -8,17 +8,22 @@ def extract_object_center(scene):
     centers = [cam.camera_center.cpu().numpy() for cam in train_cameras] + [cam.camera_center.cpu().numpy() for cam in test_cameras]
     return np.mean(centers, axis=0)
 
-def look_at(camera_pos, target):
-    forward = target - camera_pos
+def look_at(camera_pos, target, up=np.array([0, 1, 0])):
+    forward = (target - camera_pos)
     forward /= np.linalg.norm(forward)
-    tmp = np.array([0, 1, 0])
-    right = np.cross(tmp, forward)
+
+    if np.abs(np.dot(forward, up)) > 0.99:
+        up = np.array([0, 0, 1])  # fallback to avoid degenerate cross-product
+
+    right = np.cross(up, forward)
     right /= np.linalg.norm(right)
-    up = np.cross(forward, right)
-    return np.stack([right, up, forward], axis=1)
+    new_up = np.cross(forward, right)
+
+    return np.stack([right, new_up, forward], axis=1)
+
 
 def perturb_and_generate_poses(scene, output_json_path, n_poses=10, radius_perturb=0.05):
-    center = extract_object_center(scene)
+    center = np.zeros(3)
     train_cams = scene.getTrainCameras()
     poses = []
 
