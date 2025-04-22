@@ -29,7 +29,7 @@ def look_at(view, target):
 
 
 def perturb_and_generate_poses(scene, gaussians, output_json_path, n_poses=10, radius_perturb=0.05):
-    center = extract_object_center(gaussians)
+    center = extract_object_center_from_gaussians(gaussians)
     train_cams = scene.getTrainCameras()
     poses = []
 
