@@ -2,28 +2,34 @@ import numpy as np
 import json
 from scipy.spatial.transform import Rotation as R
 
-def extract_object_center(scene):
-    train_cameras = scene.getTrainCameras()
-    test_cameras = scene.getTestCameras()
-    centers = [cam.camera_center.cpu().numpy() for cam in train_cameras] + [cam.camera_center.cpu().numpy() for cam in test_cameras]
-    return np.mean(centers, axis=0)
+def extract_object_center_from_gaussians(gaussians):
+    means = list(gaussians.capture()[1:7])
+    return means[0].mean(0).detach().cpu().numpy()
 
-def look_at(camera_pos, target, up=np.array([0, 1, 0])):
-    forward = (target - camera_pos)
-    forward /= np.linalg.norm(forward)
+def look_at(view, target):
+    d = (-target + view)
+    d = d / np.linalg.norm(d)
+    up = np.array([0, 0, 1])
+    r = np.cross(up, d)
+    r /= np.linalg.norm(r)
+    u = np.cross(d, r)
+    u /= np.linalg.norm(u)
 
-    if np.abs(np.dot(forward, up)) > 0.99:
-        up = np.array([0, 0, 1])  # fallback to avoid degenerate cross-product
+    c2w = np.eye(4)
+    c2w[:3, :3] = np.linalg.inv(np.stack([r, u, d], axis=0))
+    c2w[:3, 3] = view
 
-    right = np.cross(up, forward)
-    right /= np.linalg.norm(right)
-    new_up = np.cross(forward, right)
+    c2w[:3, 1:3] *= -1  # Y and Z flip
+    w2c = np.linalg.inv(c2w)
 
-    return np.stack([right, new_up, forward], axis=1)
+    R = w2c[:3, :3].T  # transpose for CUDA compatibility
+    T = w2c[:3, 3]
+    return R, T
 
 
-def perturb_and_generate_poses(scene, output_json_path, n_poses=10, radius_perturb=0.05):
-    center = extract_object_center(scene)
+
+def perturb_and_generate_poses(scene, gaussians, output_json_path, n_poses=10, radius_perturb=0.05):
+    center = extract_object_center(gaussians)
     train_cams = scene.getTrainCameras()
     poses = []
 
@@ -54,11 +60,11 @@ def perturb_and_generate_poses(scene, output_json_path, n_poses=10, radius_pertu
         new_pos = radius * new_direction
 
         # Step 4: Look at actual object center (possibly ≠ origin)
-        R_mat = look_at(new_pos, center)
+        R, T = look_at(new_pos, center)
 
         poses.append({
-            "R": R_mat.tolist(),
-            "T": new_pos.tolist(),
+            "R": R.tolist(),
+            "T": T.tolist(),
             "FoVx": float(cam.FoVx),
             "FoVy": float(cam.FoVy)
         })
