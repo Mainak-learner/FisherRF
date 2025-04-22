@@ -1,12 +1,10 @@
 import numpy as np
 import json
 from scipy.spatial.transform import Rotation as R
-from scene import Scene
-from gaussian_renderer import GaussianModel
 
 def extract_object_center(scene):
     train_cameras = scene.getTrainCameras()
-    centers = [cam.camera_center for cam in train_cameras]
+    centers = [cam.camera_center.cpu().numpy() for cam in train_cameras]
     return np.mean(centers, axis=0)
 
 def look_at(camera_pos, target):
@@ -26,7 +24,7 @@ def perturb_and_generate_poses(scene, output_json_path, n_poses=10, radius_pertu
     indices = np.random.choice(len(train_cams), size=n_poses, replace=True)
     for i in range(n_poses):
         cam = train_cams[indices[i]]
-        base_pos = cam.camera_center
+        base_pos = cam.camera_center.cpu().numpy()
         direction = base_pos - center
         radius = np.linalg.norm(direction)
         direction /= radius  # unit vector
@@ -51,8 +49,8 @@ def perturb_and_generate_poses(scene, output_json_path, n_poses=10, radius_pertu
         poses.append({
             "R": R_mat.tolist(),
             "T": new_pos.tolist(),
-            "FoVx": cam.FoVx,
-            "FoVy": cam.FoVy
+            "FoVx": float(cam.FoVx),
+            "FoVy": float(cam.FoVy)
         })
 
     with open(output_json_path, 'w') as f:
