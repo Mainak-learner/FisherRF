@@ -412,7 +412,7 @@ def render_sets(dataset : ModelParams, iteration : int, pipeline : PipelineParam
 
         with tempfile.NamedTemporaryFile(mode='w', suffix=".json", delete=False, encoding="utf-8") as tmp:
             perturb_and_generate_poses(
-                train_json_path=args.generate_custom_from_test_train,
+                transform_json_path=args.generate_custom_from_test_train,
                 output_json_path=tmp.name,
                 n_poses=args.num_generated_poses,
                 radius_perturb=0.0005
