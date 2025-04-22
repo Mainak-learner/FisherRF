@@ -2,10 +2,10 @@ import numpy as np
 import json
 from scipy.spatial.transform import Rotation as R
 
-def extract_object_center(train_json_path, test_json_path):
-    with open(train_json_path, 'r') as f:
+def extract_object_center(transform_json_path):
+    with open(transform_json_path + "/transforms_train.json", 'r') as f:
         train_data = json.load(f)
-    with open(test_json_path, 'r') as f:
+    with open(transform_json_path + "/transforms_test.json", 'r') as f:
         test_data = json.load(f)
     centers = [np.array(frame['transform_matrix'])[:3, 3] for frame in train_data['frames']] + [np.array(frame['transform_matrix'])[:3, 3] for frame in test_data['frames']]
     return np.mean(centers, axis=0)
@@ -19,11 +19,11 @@ def look_at(camera_pos, target):
     up = np.cross(forward, right)
     return np.stack([right, up, forward], axis=1)
 
-def perturb_and_generate_poses(train_json_path, test_json_path, output_json_path, n_poses=10, radius_perturb=0.05):
-    with open(train_json_path, 'r') as f:
+def perturb_and_generate_poses(transform_json_path, output_json_path, n_poses=10, radius_perturb=0.05):
+    with open(transform_json_path, 'r') as f:
         train_data = json.load(f)
 
-    center = extract_object_center(train_json_path, test_json_path)
+    center = extract_object_center(transform_json_path)
     poses = []
 
     indices = np.random.choice(len(train_data['frames']), size=n_poses, replace=True)

@@ -294,7 +294,7 @@ def render_combined_uncertainty(model_path, name, iteration, train_views, test_v
                 
                 if hasattr(args, "pose_json"):
                     prefix = "pose_"
-                elif hasattr(args, "generate_from_train_json"):
+                elif hasattr(args, "generate_custom_from_test_train"):
                     prefix = "generated_pose_"
                 else:
                     prefix = "combined_uncertainty_"
@@ -403,8 +403,8 @@ def render_sets(dataset : ModelParams, iteration : int, pipeline : PipelineParam
         custom_views = load_cameras_from_pose_file(args.pose_json, device="cuda", resolution=fallback_res)
         test_views = custom_views
 
-    elif hasattr(args, "generate_from_train_json") and args.generate_from_train_json:
-        print("Generating perturbed custom poses from:", args.generate_from_train_json)
+    elif hasattr(args, "generate_custom_from_test_train") and args.generate_custom_from_test_train:
+        print("Generating perturbed custom poses from:", args.generate_custom_from_test_train)
 
         # Generate perturbed poses and write to a temp file
         import tempfile
@@ -412,7 +412,7 @@ def render_sets(dataset : ModelParams, iteration : int, pipeline : PipelineParam
 
         with tempfile.NamedTemporaryFile(mode='w', suffix=".json", delete=False, encoding="utf-8") as tmp:
             perturb_and_generate_poses(
-                train_json_path=args.generate_from_train_json,
+                train_json_path=args.generate_custom_from_test_train,
                 output_json_path=tmp.name,
                 n_poses=args.num_generated_poses,
                 radius_perturb=0.0005
@@ -476,8 +476,8 @@ if __name__ == "__main__":
     parser.add_argument("--depth_only", action="store_true", help="render depth only")
     parser.add_argument("--current", action="store_true", help="render uncertainty from current view")
     parser.add_argument("--pose_json", type=str, default=None, help="Path to a JSON file of custom camera poses")
-    parser.add_argument("--generate_from_train_json", type=str, default=None,
-                    help="Path to training transform JSON from which to auto-generate spherical poses")
+    parser.add_argument("--generate_custom_from_test_train", type=str, default=None,
+                    help="Path to training and test transform JSON from which to auto-generate spherical poses")
     parser.add_argument("--num_generated_poses", type=int, default=10, help="Number of generated custom poses")
     parser.add_argument("--camera_radius", type=float, default=4.0, help="Radius of camera circle")
 
