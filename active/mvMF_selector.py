@@ -15,10 +15,7 @@ def vmf_density(x, mu, kappa):
 def get_camera_centers(cameras):
     centers = []
     for cam in cameras:
-        # Extract the camera-to-world matrix (assumes shape [4,4])
-        c2w = cam.world_view_transform.inverse()  # [4,4]
-        center = c2w[:3, 3]  # camera position in world coords
-        centers.append(center.detach().cpu().numpy())
+        centers.append(cam.camera_center.detach().cpu().numpy())
     return centers
 
 class MvMFSelector:
