@@ -460,7 +460,7 @@ def render_sets(dataset : ModelParams, iteration : int, pipeline : PipelineParam
             pose_entries.append({
                 "position": pos,
                 "direction": dir,
-                "uncertainty": float(unc),
+                "uncertainty": float(unc_mean),
                 "FoVx": float(view.FoVx),
                 "FoVy": float(view.FoVy)
             })
