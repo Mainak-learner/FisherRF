@@ -30,6 +30,8 @@ import matplotlib.pyplot as plt
 import itertools
 from active.schema import schema_dict, override_test_idxs_dict, override_train_idxs_dict
 from scene import Scene
+import json
+from vis.launch_viewer import launch_viewer_from_json
 import random
 
 def capture(self):
@@ -248,6 +250,7 @@ def render_combined_uncertainty(model_path, name, iteration, train_views, test_v
     # Prepare color from Hessian
     hessian_color = repeat(H_per_gaussian.detach(), "n -> n c", c=3)
     
+    fisher_unc_norms = []
     # Render uncertainty visualizations for selected views
     with torch.no_grad():
         for idx, view in enumerate(tqdm(selected_views, desc="Rendering combined uncertainty visualization")):
@@ -267,7 +270,15 @@ def render_combined_uncertainty(model_path, name, iteration, train_views, test_v
             
             # Normalize FisherRF uncertainty for visualization
             fisher_unc_norm = torch.log(fisher_uncertainty_map / pixel_gaussian_counter.clamp(min=1e-6))
+
+            min_fisher_val = fisher_unc_norm.min()
+            max_fisher_val = fisher_unc_norm.max()
+            if max_fisher_val > min_fisher_val:
+                fisher_unc_norm = (fisher_unc_norm - min_fisher_val) / (max_fisher_val - min_fisher_val)
+            else:
+                fisher_unc_norm = torch.zeros_like(fisher_unc_norm)
             
+            fisher_unc_norms.append(fisher_unc_norm)
             # Render variational uncertainty if available
             if hasattr(gaussians, 'n_models') and gaussians.n_models > 1:
                 # Variational Uncertainty
@@ -285,13 +296,6 @@ def render_combined_uncertainty(model_path, name, iteration, train_views, test_v
                 else:
                     var_uncertainty_map = torch.zeros_like(var_uncertainty_map)
 
-                min_fisher_val = fisher_unc_norm.min()
-                max_fisher_val = fisher_unc_norm.max()
-                if max_fisher_val > min_fisher_val:
-                    fisher_unc_norm = (fisher_unc_norm - min_fisher_val) / (max_fisher_val - min_fisher_val)
-                else:
-                    fisher_unc_norm = torch.zeros_like(fisher_unc_norm)
-                
                 if hasattr(args, "pose_json"):
                     prefix = "pose_"
                 elif hasattr(args, "generate_custom_from_test_train"):
@@ -377,6 +381,8 @@ def render_combined_uncertainty(model_path, name, iteration, train_views, test_v
                     pixel_gaussian_counter=pixel_gaussian_counter.cpu().numpy(),
                     depth=depth.cpu().numpy()
                 )
+    
+    return fisher_unc_norms
 
 def render_sets(dataset : ModelParams, iteration : int, pipeline : PipelineParams, args):
     # Initialize Gaussian model - if args.use_variational is true, create variational model
@@ -437,13 +443,33 @@ def render_sets(dataset : ModelParams, iteration : int, pipeline : PipelineParam
     # Render with appropriate method
     if args.combined:
         # New mode - render both FisherRF and variational uncertainty
-        render_combined_uncertainty(
-            dataset.model_path, "train", scene.loaded_iter, 
-            train_views, test_views, 
-            gaussians, pipeline, background, 
-            num_views=args.num_views if hasattr(args, 'num_views') else 5,
-            camera_extent=scene.cameras_extent, args=args
-        )
+        fisher_unc_norms, selected_views = render_combined_uncertainty(
+                dataset.model_path, "train", scene.loaded_iter, 
+                train_views, test_views, 
+                gaussians, pipeline, background, 
+                num_views=args.num_views if hasattr(args, 'num_views') else 5,
+                camera_extent=scene.cameras_extent, args=args
+            )
+        
+        pose_entries = []
+        for view, unc in zip(test_views, fisher_unc_norms):  # assuming test_uncertainties already computed
+            pos = view.camera_center.cpu().numpy().tolist()
+            direction = -(view.R.T @ torch.tensor([0., 0., 1.], device=view.R.device))  # -Z axis
+            dir = direction.cpu().numpy().tolist()
+            pose_entries.append({
+                "position": pos,
+                "direction": dir,
+                "uncertainty": float(unc),
+                "FoVx": float(view.FoVx),
+                "FoVy": float(view.FoVy)
+            })
+
+        json_path = "vis_output/nbv_custom_poses.json"
+        os.makedirs(os.path.dirname(json_path), exist_ok=True)
+        with open(json_path, "w") as f:
+            json.dump(pose_entries, f, indent=2)
+        launch_viewer_from_json(json_path, ngrok_token="YOUR_REAL_NGROK_TOKEN")
+        np.save("vis_output/object_xyz.npy", scene.gaussians._xyz.detach().cpu().numpy())
     elif args.current:
         # Original "current" mode - compute uncertainty for each view independently
         render_set_current(

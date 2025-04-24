@@ -72,3 +72,5 @@ def perturb_and_generate_poses(scene, gaussians, output_json_path, n_poses=10, r
 
     with open(output_json_path, 'w') as f:
         json.dump(poses, f, indent=4)
+
+    return poses
