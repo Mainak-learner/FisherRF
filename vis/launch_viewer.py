@@ -14,12 +14,16 @@ def launch_viewer_from_json(json_path, ngrok_token="YOUR_NGROK_TOKEN"):
 
     ngrok.set_auth_token(ngrok_token)
     tunnel = ngrok.connect(8097)
-    visdom_host = tunnel.public_url.replace("https://", "").replace("http://", "")
-    
     print(f"[Visualizer] 🔗 View here: {tunnel.public_url}")
 
+    # Correctly parse and extract the hostname for Visdom
+    from urllib.parse import urlparse
+    parsed_url = urlparse(tunnel.public_url)
+    visdom_host = parsed_url.hostname  # e.g., "b075-xyz.ngrok-free.app"
+
+    # Connect Visdom to that host
     vis = Visdom(server=visdom_host, port=80)
-    
+
     with open(json_path, 'r') as f:
         poses = json.load(f)
 
