@@ -13,16 +13,21 @@ def launch_viewer_from_json(json_path, ngrok_token="YOUR_NGROK_TOKEN"):
     time.sleep(2)
 
     ngrok.set_auth_token(ngrok_token)
+    # Start the tunnel
     tunnel = ngrok.connect(8097)
-    print(f"[Visualizer] 🔗 View here: {tunnel.public_url}")
 
-    # Correctly parse and extract the hostname for Visdom
+    # SAFELY extract the string URL
+    url_str = tunnel.public_url  # This is now a proper string like "https://xxxx.ngrok-free.app"
+    print(f"[Visualizer] 🔗 View here: {url_str}")
+
+    # Parse and extract hostname
     from urllib.parse import urlparse
-    parsed_url = urlparse(tunnel.public_url)
-    visdom_host = parsed_url.hostname  # e.g., "b075-xyz.ngrok-free.app"
+    parsed_url = urlparse(url_str)  # <-- MAKE SURE it's the string here
+    visdom_host = parsed_url.hostname  # like "xxxx.ngrok-free.app"
 
-    # Connect Visdom to that host
+    # Start Visdom client using correct host and port
     vis = Visdom(server=visdom_host, port=80)
+
 
     with open(json_path, 'r') as f:
         poses = json.load(f)
