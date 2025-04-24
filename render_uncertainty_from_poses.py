@@ -382,7 +382,7 @@ def render_combined_uncertainty(model_path, name, iteration, train_views, test_v
                     depth=depth.cpu().numpy()
                 )
     
-    return fisher_unc_norms
+    return fisher_unc_norms, selected_views
 
 def render_sets(dataset : ModelParams, iteration : int, pipeline : PipelineParams, args):
     # Initialize Gaussian model - if args.use_variational is true, create variational model
@@ -452,7 +452,7 @@ def render_sets(dataset : ModelParams, iteration : int, pipeline : PipelineParam
             )
         
         pose_entries = []
-        for view, unc in zip(test_views, fisher_unc_norms):  # assuming test_uncertainties already computed
+        for view, unc in zip(selected_views, fisher_unc_norms):  # assuming test_uncertainties already computed
             pos = view.camera_center.cpu().numpy().tolist()
             direction = -(view.R.T @ torch.tensor([0., 0., 1.], device=view.R.device))  # -Z axis
             dir = direction.cpu().numpy().tolist()
