@@ -6,27 +6,31 @@ import numpy as np
 from visdom import Visdom
 from pyngrok import ngrok
 
-def launch_viewer_from_json(json_path, ngrok_token="YOUR_NGROK_TOKEN"):
+def launch_viewer_from_json(json_path, ngrok_token):
+    import time, json, numpy as np
+    from visdom import Visdom
+    from pyngrok import ngrok
+    from urllib.parse import urlparse
+    import threading
+    import visdom.server
+
     print("[Visualizer] Starting Visdom server...")
 
-    subprocess.Popen(["python3", "-m", "visdom.server", "-port", "8097"])
-    time.sleep(2)
+    # Use a thread-safe visdom launch
+    def start_visdom():
+        visdom.server.download_scripts_and_run(["--port", "8097"])
+    threading.Thread(target=start_visdom, daemon=True).start()
+
+    time.sleep(10)
 
     ngrok.set_auth_token(ngrok_token)
-    # Start the tunnel
     tunnel = ngrok.connect(8097)
+    print(f"[Visualizer] 🔗 View here: {tunnel.public_url}")
 
-    # SAFELY extract the string URL
-    url_str = tunnel.public_url  # This is now a proper string like "https://xxxx.ngrok-free.app"
-    print(f"[Visualizer] 🔗 View here: {url_str}")
+    parsed = urlparse(tunnel.public_url)
+    visdom_host = parsed.hostname
 
-    # Parse and extract hostname
-    from urllib.parse import urlparse
-    parsed_url = urlparse(url_str)  # <-- MAKE SURE it's the string here
-    visdom_host = parsed_url.hostname  # like "xxxx.ngrok-free.app"
-
-    # Start Visdom client using correct host and port
-    vis = Visdom(server=visdom_host, port=80)
+    vis = Visdom(server=visdom_host, port=80, use_incoming_socket=False)
 
 
     with open(json_path, 'r') as f:
