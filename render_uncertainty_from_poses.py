@@ -469,8 +469,8 @@ def render_sets(dataset : ModelParams, iteration : int, pipeline : PipelineParam
         os.makedirs(os.path.dirname(json_path), exist_ok=True)
         with open(json_path, "w") as f:
             json.dump(pose_entries, f, indent=2)
-        launch_viewer_from_json(json_path, ngrok_token="YOUR_REAL_NGROK_TOKEN")
         np.save("vis_output/object_xyz.npy", scene.gaussians._xyz.detach().cpu().numpy())
+        launch_viewer_from_json(json_path, ngrok_token="2wAH4rRlqcS3O7tsdZtgit3DCvN_3yc6ENMkW8cTuHYCbTfCv")
     elif args.current:
         # Original "current" mode - compute uncertainty for each view independently
         render_set_current(
