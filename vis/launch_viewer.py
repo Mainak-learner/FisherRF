@@ -9,16 +9,14 @@ from pyngrok import ngrok
 def launch_viewer_from_json(json_path, ngrok_token="YOUR_NGROK_TOKEN"):
     print("[Visualizer] Starting Visdom server...")
 
-    # Start visdom server
     subprocess.Popen(["python3", "-m", "visdom.server", "-port", "8097"])
     time.sleep(2)
 
-    # Expose via ngrok
     ngrok.set_auth_token(ngrok_token)
-    public_url = ngrok.connect(8097)
-    print(f"[Visualizer] 🔗 View here: {public_url}")
+    tunnel = ngrok.connect(8097)
+    print(f"[Visualizer] 🔗 View here: {tunnel.public_url}")
 
-    vis = Visdom(server=public_url)
+    vis = Visdom(server=tunnel.public_url)
 
     with open(json_path, 'r') as f:
         poses = json.load(f)
