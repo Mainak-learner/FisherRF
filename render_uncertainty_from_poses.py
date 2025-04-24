@@ -456,6 +456,7 @@ def render_sets(dataset : ModelParams, iteration : int, pipeline : PipelineParam
             pos = view.camera_center.cpu().numpy().tolist()
             direction = -(view.R.T @ torch.tensor([0., 0., 1.], device=view.R.device))  # -Z axis
             dir = direction.cpu().numpy().tolist()
+            unc_mean = unc.mean().cpu().numpy()
             pose_entries.append({
                 "position": pos,
                 "direction": dir,
