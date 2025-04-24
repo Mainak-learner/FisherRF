@@ -13,10 +13,12 @@ def launch_viewer_from_json(json_path, ngrok_token="YOUR_NGROK_TOKEN"):
     time.sleep(2)
 
     ngrok.set_auth_token(ngrok_token)
-    public_url = ngrok.connect(8097)
-    print(f"[Visualizer] 🔗 View here: {public_url.public_url}")  # this prints the actual link
+    tunnel = ngrok.connect(8097)
+    visdom_url = tunnel.public_url.replace("https://", "").replace("http://", "")
+    
+    print(f"[Visualizer] 🔗 View here: {tunnel.public_url}")
 
-    vis = Visdom(server=public_url.public_url) 
+    vis = Visdom(server=visdom_url)  # now it's a plain string like "5049-...ngrok-free.app"
 
     with open(json_path, 'r') as f:
         poses = json.load(f)
