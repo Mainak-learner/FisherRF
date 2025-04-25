@@ -40,6 +40,15 @@ def perturb_and_generate_poses(scene, gaussians, output_json_path, angle_perturb
     base_cam = train_cams[base_idx]
     base_pos = base_cam.camera_center.cpu().numpy()
 
+    R_base, T_base = look_at(base_pos, center)
+    poses.append({
+        "name": "base",
+        "R": R_base.tolist(),
+        "T": T_base.tolist(),
+        "FoVx": float(base_cam.FoVx),
+        "FoVy": float(base_cam.FoVy)
+    })
+
     # Normalize base direction and compute spherical angles
     direction = base_pos / np.linalg.norm(base_pos)
     radius = np.linalg.norm(base_pos)
