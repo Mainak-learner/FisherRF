@@ -36,6 +36,7 @@ def perturb_and_generate_poses(scene, gaussians, output_json_path, angle_perturb
 
     # Select a single base camera
     base_idx = np.random.choice(len(train_cams))
+    print(base_idx)
     base_cam = train_cams[base_idx]
     base_pos = base_cam.camera_center.cpu().numpy()
 
