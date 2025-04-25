@@ -34,18 +34,18 @@ def perturb_and_generate_poses(scene, gaussians, output_json_path, n_poses=10, r
     train_cams = scene.getTrainCameras()
     poses = []
 
-    indices = np.random.choice(len(train_cams), size=n_poses, replace=True)
-    for i in range(n_poses):
-        cam = train_cams[indices[i]]
-        base_pos = cam.camera_center.cpu().numpy()
-        
-        # Step 1: Use direction from ORIGIN
-        direction = base_pos / np.linalg.norm(base_pos)
-        radius = np.linalg.norm(base_pos)
+    # Step 0: Select a single base camera
+    base_idx = np.random.choice(len(train_cams))
+    base_cam = train_cams[base_idx]
+    base_pos = base_cam.camera_center.cpu().numpy()
 
-        # Step 2: Perturb on tangent of sphere centered at origin
+    direction = base_pos / np.linalg.norm(base_pos)
+    radius = np.linalg.norm(base_pos)
+
+    for i in range(n_poses):
+        # Step 1: Perturb on tangent of sphere centered at origin
         tangent = np.random.randn(3)
-        tangent -= tangent.dot(direction) * direction
+        tangent -= tangent.dot(direction) * direction  # make tangent orthogonal
         tangent /= np.linalg.norm(tangent)
         tangent *= radius_perturb
 
@@ -57,17 +57,17 @@ def perturb_and_generate_poses(scene, gaussians, output_json_path, n_poses=10, r
             new_direction[1] *= -1
             new_direction /= np.linalg.norm(new_direction)
 
-        # Step 3: New camera position on sphere centered at origin
+        # Step 2: New camera position
         new_pos = radius * new_direction
 
-        # Step 4: Look at actual object center (possibly ≠ origin)
+        # Step 3: Look at object center
         R, T = look_at(new_pos, center)
 
         poses.append({
             "R": R.tolist(),
             "T": T.tolist(),
-            "FoVx": float(cam.FoVx),
-            "FoVy": float(cam.FoVy)
+            "FoVx": float(base_cam.FoVx),
+            "FoVy": float(base_cam.FoVy)
         })
 
     with open(output_json_path, 'w') as f:
