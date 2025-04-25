@@ -29,41 +29,49 @@ def look_at(view, target):
 
 
 
-def perturb_and_generate_poses(scene, gaussians, output_json_path, n_poses=10, radius_perturb=0.05):
+def perturb_cardinal_poses(scene, gaussians, output_json_path, angle_perturb=np.deg2rad(5)):
     center = extract_object_center_from_gaussians(scene)
     train_cams = scene.getTrainCameras()
     poses = []
 
-    # Step 0: Select a single base camera
+    # Select a single base camera
     base_idx = np.random.choice(len(train_cams))
     base_cam = train_cams[base_idx]
     base_pos = base_cam.camera_center.cpu().numpy()
 
+    # Normalize base direction and compute spherical angles
     direction = base_pos / np.linalg.norm(base_pos)
     radius = np.linalg.norm(base_pos)
 
-    for i in range(n_poses):
-        # Step 1: Perturb on tangent of sphere centered at origin
-        tangent = np.random.randn(3)
-        tangent -= tangent.dot(direction) * direction  # make tangent orthogonal
-        tangent /= np.linalg.norm(tangent)
-        tangent *= radius_perturb
+    x, y, z = direction
+    theta = np.arccos(z)               # polar angle (from +z)
+    phi = np.arctan2(y, x)             # azimuth angle
 
-        new_direction = direction + tangent
-        new_direction /= np.linalg.norm(new_direction)
+    delta = angle_perturb
 
-        # Constrain to top hemisphere
-        if new_direction[1] < 0:
-            new_direction[1] *= -1
-            new_direction /= np.linalg.norm(new_direction)
+    # Define angular perturbations
+    perturbations = {
+        "theta_up":    (theta - delta, phi),
+        "theta_down":  (theta + delta, phi),
+        "phi_left":    (theta, phi - delta),
+        "phi_right":   (theta, phi + delta),
+    }
 
-        # Step 2: New camera position
-        new_pos = radius * new_direction
+    for name, (theta_p, phi_p) in perturbations.items():
+        # Clamp theta to avoid poles
+        theta_p = np.clip(theta_p, 1e-4, np.pi - 1e-4)
 
-        # Step 3: Look at object center
+        # Convert spherical → cartesian
+        dx = np.sin(theta_p) * np.cos(phi_p)
+        dy = np.sin(theta_p) * np.sin(phi_p)
+        dz = np.cos(theta_p)
+        new_dir = np.array([dx, dy, dz])
+        new_pos = radius * new_dir
+
         R, T = look_at(new_pos, center)
 
         poses.append({
+            "name": name,
             "R": R.tolist(),
             "T": T.tolist(),
             "FoVx": float(base_cam.FoVx),

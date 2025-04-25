@@ -422,7 +422,7 @@ def render_sets(dataset : ModelParams, iteration : int, pipeline : PipelineParam
                 gaussians = gaussians,
                 output_json_path=tmp.name,
                 n_poses=args.num_generated_poses,
-                radius_perturb=args.tangent_perturb
+                angle_perturb=args.angle_perturb
             )
             tmp_path = tmp.name
 
@@ -470,7 +470,7 @@ def render_sets(dataset : ModelParams, iteration : int, pipeline : PipelineParam
         with open(json_path, "w") as f:
             json.dump(pose_entries, f, indent=2)
         np.save("vis_output/object_xyz.npy", scene.gaussians._xyz.detach().cpu().numpy())
-        launch_viewer_from_json(json_path, ngrok_token="2wAH4rRlqcS3O7tsdZtgit3DCvN_3yc6ENMkW8cTuHYCbTfCv")
+        # launch_viewer_from_json(json_path, ngrok_token="2wAH4rRlqcS3O7tsdZtgit3DCvN_3yc6ENMkW8cTuHYCbTfCv")
     elif args.current:
         # Original "current" mode - compute uncertainty for each view independently
         render_set_current(
@@ -507,7 +507,7 @@ if __name__ == "__main__":
     parser.add_argument("--generate_custom_from_test_train", type=str, default=None,
                     help="Path to training and test transform JSON from which to auto-generate spherical poses")
     parser.add_argument("--num_generated_poses", type=int, default=10, help="Number of generated custom poses")
-    parser.add_argument("--tangent_perturb", type=float, default=0.05, help="Degree of perturbation along tangent")
+    parser.add_argument("--angle_perturb", type=float, default=5, help="Degree of angle perturbation (in degrees)")
 
     
     # New arguments for variational mode
