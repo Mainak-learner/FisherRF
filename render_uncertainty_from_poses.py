@@ -237,8 +237,8 @@ def render_combined_uncertainty(model_path, name, iteration, train_views, test_v
 
     # Compute H_per_gaussian using all views (train + test)
     if not args.depth_only:
-        print("Computing FisherRF uncertainty with train views...")
-        for idx, view in enumerate(tqdm(train_views, desc="Computing FisherRF uncertainty")):
+        print("Computing FisherRF uncertainty with all views...")
+        for idx, view in enumerate(tqdm(itertools.chain(train_views, test_views), desc="Computing FisherRF uncertainty")):
             render_pkg = modified_render(view, gaussians, pipeline, background)
             pred_img = render_pkg["render"]
             pred_img.backward(gradient=torch.ones_like(pred_img))
