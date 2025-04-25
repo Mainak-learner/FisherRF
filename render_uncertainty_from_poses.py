@@ -269,7 +269,7 @@ def render_combined_uncertainty(model_path, name, iteration, train_views, test_v
             )
             
             # Normalize FisherRF uncertainty for visualization
-            fisher_unc_norm = torch.log(fisher_uncertainty_map / pixel_gaussian_counter)
+            fisher_unc_norm = torch.log(torch.abs(fisher_uncertainty_map))
 
             min_fisher_val = fisher_unc_norm.min()
             max_fisher_val = fisher_unc_norm.max()
