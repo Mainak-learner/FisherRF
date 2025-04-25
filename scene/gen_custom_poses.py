@@ -29,7 +29,7 @@ def look_at(view, target):
 
 
 
-def perturb_cardinal_poses(scene, gaussians, output_json_path, angle_perturb=np.deg2rad(5)):
+def perturb_and_generate_poses(scene, gaussians, output_json_path, angle_perturb=np.deg2rad(5)):
     center = extract_object_center_from_gaussians(scene)
     train_cams = scene.getTrainCameras()
     poses = []
