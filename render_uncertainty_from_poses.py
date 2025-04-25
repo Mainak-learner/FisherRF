@@ -421,7 +421,6 @@ def render_sets(dataset : ModelParams, iteration : int, pipeline : PipelineParam
                 scene=scene,
                 gaussians = gaussians,
                 output_json_path=tmp.name,
-                n_poses=args.num_generated_poses,
                 angle_perturb=args.angle_perturb
             )
             tmp_path = tmp.name
