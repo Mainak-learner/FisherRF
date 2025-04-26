@@ -1,5 +1,4 @@
 # vis/launch_viewer.py
-
 import subprocess
 import time
 import json
@@ -34,64 +33,69 @@ def launch_viewer_from_json(json_path, ngrok_token):
     positions = np.array([p["position"] for p in poses])
     uncertainties = np.array([p["uncertainty"] for p in poses])
     directions = np.array([p["direction"] for p in poses])
-    
+
     colors = (1 - uncertainties)[:, None] * np.array([[0,255,0]]) + uncertainties[:, None] * np.array([[255,0,0]])
 
-    # Plot camera centers
-    vis.scatter(
-        X=positions,
-        opts=dict(
-            markersize=6,
-            markercolor=colors.astype(np.uint8),
-            title="Generated Poses",
-            xlabel="X", ylabel="Y", zlabel="Z"
-        ),
-        win="cameras"
-    )
+    # Now create data for poses + arrows
+    arrow_length = 0.3
 
-    # Plot view directions as small lines ("mini-cones")
-    line_segments = []
-    line_colors = []
-
-    arrow_length = 0.1  # Small arrows
+    line_starts = []
+    line_ends = []
 
     for pos, dir in zip(positions, directions):
         start = pos
         end = pos + arrow_length * np.array(dir)
-        line_segments.append(np.vstack((start, end)))
-        line_colors.append(np.array([0, 0, 255]))  # Blue arrows
+        line_starts.append(start)
+        line_ends.append(end)
 
-    if len(line_segments) > 0:
-        lines = np.vstack(line_segments)
-        line_color_array = np.vstack([line_colors for _ in range(len(line_segments))])
-        
-        vis.line(
-            X=lines[:, [0]], Y=lines[:, [1]], opts=dict(
-                markers=False,
-                linecolor=line_color_array.tolist(),
-                xlabel='X', ylabel='Y',
-                title="Camera Directions (XZ plane)"
-            ),
-            win="camera_dirs"
-        )
+    # Stack points for lines
+    lines = []
+    for s, e in zip(line_starts, line_ends):
+        lines.append(s)
+        lines.append(e)
+        lines.append([np.nan, np.nan, np.nan])  # break in line
 
-    # Plot reconstructed object points
+    lines = np.array(lines)
+
+    # Try to load reconstructed object
     try:
         object_points = np.load("vis_output/object_xyz.npy")
-
-        # Optional: downsample if too big
         if object_points.shape[0] > 5000:
             idx = np.random.choice(object_points.shape[0], 5000, replace=False)
             object_points = object_points[idx]
-
-        vis.scatter(
-            X=object_points,
-            opts=dict(
-                markersize=2,
-                markercolor=np.tile(np.array([[180, 180, 180]]), (object_points.shape[0], 1)),  # light gray
-                title="Reconstructed Object (Point Cloud)"
-            ),
-            win="object_points"
-        )
     except Exception as e:
         print("[Visualizer] Could not load object point cloud:", e)
+        object_points = np.zeros((0, 3))  # fallback
+
+    # Final scatter points
+    all_points = np.vstack([positions, object_points])
+
+    # Colors: poses are colored, object is gray
+    pose_colors = colors
+    object_colors = np.tile(np.array([[180, 180, 180]]), (object_points.shape[0], 1))
+    all_colors = np.vstack([pose_colors, object_colors])
+
+    vis.scatter(
+        X=all_points,
+        opts=dict(
+            markersize=5,
+            markercolor=all_colors.astype(np.uint8),
+            title="Camera Poses + Object",
+            xlabel="X", ylabel="Y", zlabel="Z"
+        ),
+        win="combined"
+    )
+
+    # Draw directions as lines
+    if len(lines) > 0:
+        vis.scatter(
+            X=lines,
+            opts=dict(
+                markersize=0,
+                linecolor=np.array([[0, 0, 255]]),
+                mode="lines",
+                title="Camera Directions",
+                xlabel="X", ylabel="Y", zlabel="Z"
+            ),
+            win="camera_dirs"
+        )
