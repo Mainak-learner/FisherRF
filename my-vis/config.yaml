@@ -1,0 +1,2 @@
+echo "method_name: viewer" > my_vis/config.yml
+echo "data: ./" >> my_vis/config.yml
