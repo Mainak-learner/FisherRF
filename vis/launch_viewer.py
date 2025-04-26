@@ -95,4 +95,3 @@ def launch_viewer_from_json(json_path, ngrok_token):
         )
     except Exception as e:
         print("[Visualizer] Could not load object point cloud:", e)
-
