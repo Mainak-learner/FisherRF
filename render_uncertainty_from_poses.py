@@ -238,10 +238,11 @@ def render_combined_uncertainty(model_path, name, iteration, train_views, test_v
 
     # Prepare color from Hessian
     hessian_color = repeat(H_per_gaussian.detach(), "n -> n c", c=3)
+    colors = params[0].detach().cpu().numpy()
 
     scene_data = {
         "points": xyz.detach().cpu().numpy().tolist(),
-        "colors": (params[1].detach().cpu().numpy() * 255).astype(int).tolist(),
+        "colors": (np.clip(colors, 0, 1) * 255).astype(int).tolist(),
         "cameras": []
     }
     
