@@ -69,3 +69,21 @@ class MiniCam:
         view_inv = torch.inverse(self.world_view_transform)
         self.camera_center = view_inv[3][:3]
 
+class DummyCamera:
+    def __init__(self, R, T,Camera,image=None):
+        self.projection_matrix = Camera.projection_matrix
+        self.R = R
+        self.T = T
+        self.world_view_transform = torch.tensor(getWorld2View2(R, T, np.array([0,0,0]), 1.0)).transpose(0, 1).cuda()
+        self.full_proj_transform = (self.world_view_transform.unsqueeze(0).bmm(self.projection_matrix.unsqueeze(0))).squeeze(0)
+        self.camera_center = self.world_view_transform.inverse()[3, :3]
+        self.FoVx = Camera.FoVx
+        self.FoVy = Camera.FoVy
+        self.zfar = Camera.zfar
+        self.znear = Camera.znear
+        self.image_width = Camera.image_width
+        self.image_height = Camera.image_height
+
+        if image is not None:
+            self.original_image = image.clamp(0.0, 1.0).cuda()
+

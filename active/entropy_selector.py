@@ -5,6 +5,18 @@ from scene import Scene
 import numpy as np
 import random
 from gaussian_renderer import modified_render
+from gaussian_renderer import modified_render
+from scene.cameras import DummyCamera
+from utils.graphics_utils import look_at_torch, uv2car_torch
+
+def compute_fft_quality(image_tensor):
+    grayscale = image_tensor.mean(dim=0)
+    f = torch.fft.fft2(grayscale)
+    fshift = torch.fft.fftshift(f)
+    magnitude_spectrum = torch.abs(fshift)
+    median_freq = torch.median(magnitude_spectrum)
+    return median_freq.item()
+
 
 def calculate_distance(cam1, cam2):
     return torch.norm(cam1.camera_center - cam2.camera_center)
@@ -19,59 +31,61 @@ class EntropySelector(torch.nn.Module):
         self.distance_sigma = args.distance_sigma  # Controls the influence of distance
         self.views_added = 0
         self.use_scheduler = args.use_scheduler
+    
+    def optimize_entropy_guided_view(self, gaussians, scene, pipe, background, train_cameras, quality_scores, steps=200):
+        means = gaussians.capture()[1]
+        object_center = means.mean(dim=0).detach() 
+        u = torch.tensor([0.5], device='cuda', requires_grad=True)
+        v = torch.tensor([0.3], device='cuda', requires_grad=True)
+        r = torch.tensor([4.0], device='cuda', requires_grad=True)
 
-    def nbvs(self, gaussians, scene: Scene, num_views, pipe, background, completion_rate, exit_func) -> List[int]:
-        candidate_views = list(scene.get_candidate_set())
-        candidate_cameras = scene.getCandidateCameras()
-        train_cameras = scene.getTrainCameras()
-        
-        entropy_scores = []
-        distance_weights = []
-        min_distances = []
+        optimizer = torch.optim.Adam([u, v], lr=1e-3)
 
-        if self.use_scheduler:
-            new_sigma = self.distance_sigma
-        else:
-            new_sigma = self.update_distance_sigma(completion_rate)
+        for _ in range(steps):
+            optimizer.zero_grad()
 
-        for cam in tqdm(candidate_cameras, desc="Calculating entropy for candidate views"):
-            if exit_func():
-                raise RuntimeError("csm should exit early")
+            # Clamp to reachable region (upper hemisphere + user-defined v-range)
+            u.data = torch.remainder(u.data, 1.0)
+            v.data = torch.clamp(v.data, 0.01, 0.48)  # Upper hemisphere (0 ~ 0.5)
 
-            render_pkg = modified_render(cam, gaussians, pipe, background)
-            entropy = render_pkg["entropy"]
-            entropy_scores.append(entropy.mean().item())
+            # Compute camera center from spherical coords
+            cam_pos = uv2car_torch(u, v) * r + object_center
+            R = look_at_torch(cam_pos, object_center)
+            test_view = DummyCamera(R, torch.zeros(3, device="cuda"), train_cameras[0])
+            test_view.camera_center = cam_pos
 
-            # Calculate minimum distance to existing training views
-            min_distance = min(calculate_distance(cam, train_cam) for train_cam in train_cameras)
-            min_distances.append(min_distance)
-            distance_weight = torch.exp(-min_distance / new_sigma)
-            distance_weights.append(distance_weight)
-        
-        max_min_dist = max(min_distances)
+            render_pkg = modified_render(test_view, gaussians, pipe, background)
+            entropy = render_pkg["entropy"].mean()
 
-        #Boltzmann exploration (max-min distance is the temperature):
-        # probs = np.exp(np.array(entropy_scores) / max_min_dist.item())
+            # Guidance weight: inverse FFT quality-weighted distance to training cams
+            guidance = 0.0
+            for cam, q in zip(train_cameras, quality_scores):
+                dist = torch.norm(cam_pos - cam.camera_center)
+                guidance += dist * (1 - q)  # (1 - q) favors bad-quality views
 
-        # if torch.sigmoid((max(min_distances) - min(min_distances))/min(min_distances)) < 0.6:
-        #     weighted_scores = entropy_scores
-        # else:
-        if self.views_added % 2 != 0:
-            weighted_scores = [e * w for e, w in zip(entropy_scores, distance_weights)]
-            # Select the views with the highest weighted entropy scores
-            selected_indices = torch.tensor(weighted_scores).argsort(descending=True)[:num_views]
-        else:
-            selected_indices = torch.tensor(min_distances).argsort(descending=True)[:num_views]
-        
-        self.views_added +=  num_views
+            score = -(guidance * entropy)
+            score.backward()
+            optimizer.step()
 
-        return [candidate_views[i] for i in selected_indices.tolist()]
+        return test_view
 
-        #Select based on the boltzmann distribution:
-        # selected_indices = np.random.choice(list(range(len(probs))), size=num_views, replace=False, p=(probs/np.sum(probs)))        
+def nbvs(self, gaussians, scene, num_views, pipe, background, completion_rate=None, exit_func=None):
+    train_cameras = scene.getTrainCameras()
 
-        return [candidate_views[i] for i in selected_indices]
+    def fft_quality(image_tensor):
+        grayscale = image_tensor.mean(dim=0)
+        f = torch.fft.fft2(grayscale)
+        fshift = torch.fft.fftshift(f)
+        return torch.median(torch.abs(fshift)).item()
 
-    def update_distance_sigma(self, completion_rate):
-        return self.distance_sigma * 0.5 * (1 + np.cos(np.pi * completion_rate))         
+    quality_scores = [fft_quality(cam.original_image) for cam in train_cameras]
+    q_norm = (np.array(quality_scores) - np.min(quality_scores)) / (np.max(quality_scores) - np.min(quality_scores))
+
+    selected_views = []
+    for _ in range(num_views):
+        new_view = self.optimize_entropy_guided_view(gaussians, scene, pipe, background, train_cameras, q_norm)
+        scene.train_cameras[1.0].append(new_view)
+        selected_views.append(len(scene.getTrainCameras()) - 1)
+
+    return selected_views
         
