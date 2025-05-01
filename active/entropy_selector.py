@@ -32,42 +32,53 @@ class EntropySelector(torch.nn.Module):
         self.views_added = 0
         self.use_scheduler = args.use_scheduler
     
-    def optimize_entropy_guided_view(self, gaussians, scene, pipe, background, train_cameras, quality_scores, steps=200):
-        means = gaussians.capture()[1]
-        object_center = means.mean(dim=0).detach() 
-        u = torch.tensor([0.5], device='cuda', requires_grad=True)
-        v = torch.tensor([0.3], device='cuda', requires_grad=True)
-        r = torch.tensor([4.0], device='cuda', requires_grad=True)
+def optimize_entropy_guided_view(self, gaussians, scene, pipe, background, train_cameras, quality_scores, steps=200):
+    means = gaussians.capture()[1]
+    object_center = means.mean(dim=0).detach()
+    last_view = train_cameras[-1]
+    p_last = last_view.camera_center.detach()
 
-        optimizer = torch.optim.Adam([u, v], lr=1e-3)
+    # Initialize pose parameters (u, v, r)
+    u = torch.tensor([0.5], device='cuda', requires_grad=True)
+    v = torch.tensor([0.3], device='cuda', requires_grad=True)
+    r = torch.tensor([4.0], device='cuda', requires_grad=True)
 
-        for _ in range(steps):
-            optimizer.zero_grad()
+    optimizer = torch.optim.Adam([u, v, r], lr=1e-3)
+    rho = 1.5  # max reachable distance (in meters)
 
-            # Clamp to reachable region (upper hemisphere + user-defined v-range)
-            u.data = torch.remainder(u.data, 1.0)
-            v.data = torch.clamp(v.data, 0.01, 0.48)  # Upper hemisphere (0 ~ 0.5)
+    for _ in range(steps):
+        optimizer.zero_grad()
 
-            # Compute camera center from spherical coords
-            cam_pos = uv2car_torch(u, v) * r + object_center
-            R = look_at_torch(cam_pos, object_center)
-            test_view = DummyCamera(R, torch.zeros(3, device="cuda"), train_cameras[0])
-            test_view.camera_center = cam_pos
+        # Spherical to cartesian + constraint clipping
+        u.data = torch.remainder(u.data, 1.0)
+        v.data = torch.clamp(v.data, 0.01, 0.48)  # upper hemisphere
+        r.data = torch.clamp(r.data, 3.5, 5.0)
 
-            render_pkg = modified_render(test_view, gaussians, pipe, background)
-            entropy = render_pkg["entropy"].mean()
+        cam_pos = uv2car_torch(u, v) * r + object_center
 
-            # Guidance weight: inverse FFT quality-weighted distance to training cams
-            guidance = 0.0
-            for cam, q in zip(train_cameras, quality_scores):
-                dist = torch.norm(cam_pos - cam.camera_center)
-                guidance += dist * (1 - q)  # (1 - q) favors bad-quality views
+        # Reachability constraint: only allow deviation within radius rho
+        delta = cam_pos - p_last
+        norm_delta = torch.norm(delta)
+        if norm_delta > rho:
+            cam_pos = p_last + delta / norm_delta * rho  # project onto reachable boundary
 
-            score = -(guidance * entropy)
-            score.backward()
-            optimizer.step()
+        R = look_at_torch(cam_pos, object_center)
+        test_view = DummyCamera(R, torch.zeros(3, device="cuda"), train_cameras[0])
+        test_view.camera_center = cam_pos
 
-        return test_view
+        render_pkg = modified_render(test_view, gaussians, pipe, background)
+        entropy = render_pkg["entropy"].mean()
+
+        guidance = 0.0
+        for cam, q in zip(train_cameras, quality_scores):
+            dist = torch.norm(cam_pos - cam.camera_center)
+            guidance += dist * (1 - q)
+
+        loss = -(guidance * entropy)
+        loss.backward()
+        optimizer.step()
+
+    return test_view
 
 def nbvs(self, gaussians, scene, num_views, pipe, background, completion_rate=None, exit_func=None):
     train_cameras = scene.getTrainCameras()
