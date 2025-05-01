@@ -34,8 +34,7 @@ import itertools
 from active.schema import schema_dict, override_test_idxs_dict, override_train_idxs_dict
 from scene import Scene
 import json
-from vis.launch_viewer import launch_viewer_from_json
-import random
+import matplotlib.cm as cm
 
 def capture(self):
     return (
@@ -284,15 +283,23 @@ def render_combined_uncertainty(model_path, name, iteration, train_views, test_v
             pil_img.save(buf, format="PNG")
             img_base64 = "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()
 
+            # Convert normalized FisherRF uncertainty (H x W) to RGB using a colormap
+            unc_np = fisher_unc_norm.detach().cpu().numpy()
+            cmap = cm.get_cmap("magma")  # or "viridis", "plasma", etc.
+            unc_rgb = (cmap(unc_np)[:, :, :3] * 255).astype(np.uint8)  # Drop alpha, scale to [0,255]
+            unc_pil = PILImage.fromarray(unc_rgb)
+            buf = BytesIO()
+            unc_pil.save(buf, format="PNG")
+            unc_base64 = "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()
+
             cam_pos = view.camera_center.cpu().numpy()
             cam_dir = cam_pos - xyz.mean(0).detach().cpu().numpy()
-            uncertainty_val = float(fisher_unc_norm.mean().cpu().numpy())
 
             scene_data["cameras"].append({
                 "position": cam_pos.tolist(),
                 "direction": cam_dir.tolist(),
                 "image": img_base64,
-                "uncertainty": uncertainty_val
+                "uncertainty": unc_base64  
             })
 
             # Optional image save
