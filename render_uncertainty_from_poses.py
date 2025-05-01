@@ -30,6 +30,8 @@ from einops import reduce, repeat, rearrange
 from utils.load_custom_poses import load_cameras_from_pose_file
 import seaborn as sns
 import matplotlib.pyplot as plt
+from matplotlib import cm
+from matplotlib.colorbar import ColorbarBase
 import itertools
 from active.schema import schema_dict, override_test_idxs_dict, override_train_idxs_dict
 from scene import Scene
@@ -286,11 +288,15 @@ def render_combined_uncertainty(model_path, name, iteration, train_views, test_v
 
             # Convert normalized FisherRF uncertainty (H x W) to RGB using a colormap
             unc_np = fisher_unc_norm.detach().cpu().numpy()
-            cmap = cm.get_cmap("magma")  # or "viridis", "plasma", etc.
-            unc_rgb = (cmap(unc_np)[:, :, :3] * 255).astype(np.uint8)  # Drop alpha, scale to [0,255]
-            unc_pil = PILImage.fromarray(unc_rgb)
+            fig, ax = plt.subplots(figsize=(4, 3))
+            im = ax.imshow(unc_np, cmap='magma', vmin=unc_np.min(), vmax=unc_np.max())
+            ax.axis('off')
+            cbar = plt.colorbar(im, ax=ax, shrink=0.8, pad=0.02)
+            cbar.set_label("Uncertainty", fontsize=8)
+
             buf = BytesIO()
-            unc_pil.save(buf, format="PNG")
+            plt.savefig(buf, format="png", bbox_inches="tight", dpi=100)
+            plt.close(fig)
             unc_base64 = "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()
 
             cam_pos = view.camera_center.cpu().numpy()
