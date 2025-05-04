@@ -64,7 +64,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     gaussians.training_setup(opt)
     
     # Active View Selection
-    schema = schema_dict[args.schema](dataset_size=len(scene.getTrainCameras()), scene=scene)
+    schema = schema_dict[args.schema](dataset_size=len(scene.getAllCameras()), scene=scene)
     print(f"schema: {schema.load_its}")
     scene.train_idxs = schema.init_views
 
@@ -144,7 +144,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
 
         # Pick a random Camera
         if not viewpoint_stack:
-            viewpoint_stack = scene.getTrainCameras().copy()
+            viewpoint_stack = scene.getAllCameras().copy()
         viewpoint_cam = viewpoint_stack.pop(randint(0, len(viewpoint_stack)-1))
 
         # Render
