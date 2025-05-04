@@ -105,7 +105,7 @@ class Scene:
         return self.test_cameras[scale]
 
     def getAllCameras(self):
-        return self.train_cameras + self.test_cameras
+        return self.train_cameras[1.0] + self.test_cameras[1.0]
 
     def get_candidate_set(self):
         # Get candidate set 
