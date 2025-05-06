@@ -181,23 +181,21 @@ def load_cam_info(info_dict, base_path, device="cuda"):
     
 
 def look_at(view, target):
-    d = (-target+view).cpu().numpy()
-    d /= np.linalg.norm(d)
-    up = np.array([0, 0, 1])
+    view, target= view.reshape(-1), target.reshape(-1)
+    d = (-target+view)/np.linalg.norm(-target + view)
+    up = np.array([0., 0., 1.])
     r = np.cross(up, d)
     r /= np.linalg.norm(r)
     u = np.cross(d, r)
-    u /= np.linalg.norm(u)
 
-    c2w = np.eye(4)
-    c2w[:3, :3] = np.linalg.inv(np.stack([r, u, d]))
-    c2w[:3, 3] = view.cpu().numpy()
+    # c2w = np.eye(4)
+    # c2w[:3, :3] = np.linalg.inv(np.hstack([r.reshape(-1), u.reshape, d]))
+    # c2w[:3, 3] = view.cpu().numpy()
 
-    c2w[:3, 1:3] *= -1
-    w2c = np.linalg.inv(c2w)
-    R = np.transpose(w2c[:3, :3])  # R is stored transposed due to 'glm' in CUDA code
-    T = w2c[:3, 3]
-
+    # c2w[:3, 1:3] *= -1
+    # w2c = np.linalg.inv(c2w)
+    R = np.stack([r, -u, -d], dim=0)
+    T = -R @ view.view(3, 1)
 
     return R, T
 
