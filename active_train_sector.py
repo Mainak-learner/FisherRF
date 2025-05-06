@@ -16,6 +16,7 @@ from lpipsPyTorch import lpips_func
 from active.lpips_selector import LPIPSNBVSelector
 from scene.sector_pose_gen import generate_circular_hemisphere_poses, divide_hemisphere_poses
 from utils.camera_utils import look_at
+from utils.graphics_utils import uv2car_torch
 from scene.cameras import DummyCamera
 from arguments import ModelParams, PipelineParams, OptimizationParams
 
@@ -108,7 +109,7 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
             lambda cam: render_fn(cam, object_center, pipe, gaussians, background, reference_camera),
             sector_ref_imgs
         )
-        new_cam_center = selector.uv_to_xyz(torch.tensor([u_opt]), torch.tensor([v_opt])) * r_opt + object_center
+        new_cam_center = uv2car_torch(torch.tensor([u_opt]), torch.tensor([v_opt])) * r_opt + object_center
         oracle_img = render_with_oracle(new_cam_center, object_center, pipe, oracle_gaussians, background, reference_camera)
 
         dummy_camera = DummyCamera(*look_at(new_cam_center.detach(), object_center.detach()), reference_camera, image=oracle_img.detach())

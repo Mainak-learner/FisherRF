@@ -180,24 +180,19 @@ def load_cam_info(info_dict, base_path, device="cuda"):
                   image=th_img, gt_alpha_mask=None, uid=info_dict["uid"], data_device=device, image_name=info_dict["image_name"])
     
 
-def look_at(view, target):
-    view, target= view.cpu().numpy().reshape(-1), target.cpu().numpy().reshape(-1)
-    d = (-target+view)/np.linalg.norm(-target + view)
-    up = np.array([0., 0., 1.])
-    r = np.cross(up, d)
-    r /= np.linalg.norm(r)
-    u = np.cross(d, r)
+def look_at(cam_center, target):
+    cam_center = cam_center.reshape(-1).float()
+    target = target.reshape(-1).float()
+    d = (-target + cam_center) / torch.norm(-target + cam_center)
+    up = torch.tensor([0., 0., 1.], device=cam_center.device, dtype=torch.float32)
+    r = torch.cross(up, d)
+    r = r / torch.norm(r)
+    u = torch.cross(d, r)
 
-    # c2w = np.eye(4)
-    # c2w[:3, :3] = np.linalg.inv(np.hstack([r.reshape(-1), u.reshape, d]))
-    # c2w[:3, 3] = view.cpu().numpy()
+    R = torch.stack([r, -u, -d], dim=0)
+    T = (-R @ cam_center.view(3, 1)).squeeze(-1)
 
-    # c2w[:3, 1:3] *= -1
-    # w2c = np.linalg.inv(c2w)
-    R = np.stack([r, -u, -d], dim=0)
-    T = -R @ view.view(3, 1)
-
-    return R, T
+    return R.cpu().numpy(), T.cpu().numpy()
 
 def look_at_torch(cam_center, target):
     cam_center,target=cam_center.reshape(-1),target.reshape(-1)
