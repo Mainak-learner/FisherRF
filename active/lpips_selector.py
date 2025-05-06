@@ -4,6 +4,7 @@ from lpipsPyTorch import lpips_func
 import torchvision.transforms as T
 import torch.nn.functional as F  # ensure this is at the top
 from torch.optim import Adam
+from tqdm import tqdm
 from utils.graphics_utils import uv2car_torch
 
 class LPIPSNBVSelector:
@@ -36,21 +37,22 @@ class LPIPSNBVSelector:
             total_lpips += lpips_val
         return total_lpips / len(reference_imgs)
 
+
     def optimize_pose(self, init_pose, render_fn, reference_imgs,
-                      lr=1e-2, steps=100):
-        # init_pose = (u, v, r)
-        u, v, r = [torch.tensor([v_], requires_grad=True, device=self.device) for v_ in init_pose]
+                    lr=1e-2, steps=100):
+        u, v, r = [torch.tensor([v_], requires_grad=True, device=self.device, dtype=torch.float32)
+                for v_ in init_pose]
         optimizer = Adam([u, v, r], lr=lr)
 
-        for step in range(steps):
+        for step in tqdm(range(steps), desc="Optimizing NBV"):
             optimizer.zero_grad()
-            cam_center = uv2car_torch(u, v) * r
+            cam_center = uv2car_torch(u, v).to(self.device) * r
             rendered = render_fn(cam_center)  # returns image
             loss = -self.compute_lpips_loss(rendered, reference_imgs)  # maximize distance
             loss.backward(retain_graph=True)
             optimizer.step()
 
-            # enforce constraints (upper hemisphere, bounds)
+            # Enforce constraints
             v.data.clamp_(0.01, 0.49)
             u.data.remainder_(1.0)
             r.data.clamp_(3.0, 5.5)
