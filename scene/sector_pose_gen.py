@@ -28,7 +28,7 @@ def divide_hemisphere_poses(poses_xyz, center, num_circles=5, num_poses_per_circ
     assert poses_xyz.shape[0] == num_circles * num_poses_per_circle, "Expected 150 poses"
 
     # Directions from object center
-    poses_np = poses.detach().cpu().numpy()  # <-- NEW
+    poses_np = poses_xyz.detach().cpu().numpy()  # <-- NEW
     directions = poses_np - center           # <-- FIXED
 
     norms = np.linalg.norm(directions, axis=1, keepdims=True)
