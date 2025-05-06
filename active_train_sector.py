@@ -15,7 +15,7 @@ from utils.image_utils import psnr
 from lpipsPyTorch import lpips_func
 from active.lpips_selector import LPIPSNBVSelector
 from scene.sector_pose_gen import generate_circular_hemisphere_poses, divide_hemisphere_poses
-from utils.graphics_utils import look_at
+from utils.camera_utils import look_at
 from scene.cameras import DummyCamera
 from arguments import ModelParams, PipelineParams, OptimizationParams
 
