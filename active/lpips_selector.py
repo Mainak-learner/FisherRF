@@ -4,6 +4,7 @@ from lpipsPyTorch import lpips_func
 import torchvision.transforms as T
 import torch.nn.functional as F  # ensure this is at the top
 from torch.optim import Adam
+from utils.graphics_utils import uv2car_torch
 
 class LPIPSNBVSelector:
     def __init__(self, device='cuda'):
@@ -43,10 +44,10 @@ class LPIPSNBVSelector:
 
         for step in range(steps):
             optimizer.zero_grad()
-            cam_center = self.uv_to_xyz(u, v) * r
+            cam_center = self.uv2car_torch(u, v) * r
             rendered = render_fn(cam_center)  # returns image
             loss = -self.compute_lpips_loss(rendered, reference_imgs)  # maximize distance
-            loss.backward()
+            loss.backward(retain_graph=True)
             optimizer.step()
 
             # enforce constraints (upper hemisphere, bounds)
@@ -55,11 +56,3 @@ class LPIPSNBVSelector:
             r.data.clamp_(3.0, 5.5)
 
         return u.item(), v.item(), r.item()
-
-    def uv_to_xyz(self, u, v):
-        u = u * 2 * torch.pi
-        v = v * torch.pi
-        x = torch.cos(u) * torch.sin(v)
-        y = torch.sin(u) * torch.sin(v)
-        z = torch.cos(v)
-        return torch.stack([x, y, z], dim=-1).squeeze(0)
