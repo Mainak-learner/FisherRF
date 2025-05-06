@@ -13,8 +13,8 @@ from gaussian_renderer import render
 from utils.loss_utils import l1_loss, ssim
 from utils.image_utils import psnr
 from lpipsPyTorch import lpips_func
-from active.lpips_selector import LPIPSNBVSelector
-from pose_sampler import divide_hemisphere_poses
+from active.lpips_optim_selector import LPIPSNBVSelector
+from scene.pose_sampler import divide_hemisphere_poses
 from utils.graphics_utils import look_at
 from scene.cameras import DummyCamera
 from arguments import ModelParams, PipelineParams, OptimizationParams
