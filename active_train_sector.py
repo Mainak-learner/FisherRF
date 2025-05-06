@@ -45,6 +45,7 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
     prepare_output_and_logger(dataset)
     gaussians = GaussianModel(dataset.sh_degree)
     scene = Scene(dataset, gaussians)
+    Scene.getCamera = lambda self, idx, scale=1.0: self.train_cameras[scale][idx]
     gaussians.training_setup(opt)
 
     oracle_gaussians = GaussianModel(dataset.sh_degree)
