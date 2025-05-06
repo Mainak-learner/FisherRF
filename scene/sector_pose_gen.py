@@ -33,8 +33,8 @@ def divide_hemisphere_poses(poses_xyz, center, num_circles=5, num_poses_per_circ
 
     norms = np.linalg.norm(directions, axis=1, keepdims=True)
     directions = directions / norms
-    azimuth = torch.atan2(directions[:, 1], directions[:, 0])  # [-pi, pi]
-    elevation = torch.asin(directions[:, 2])  # [-pi/2, pi/2]
+    # azimuth = torch.atan2(directions[:, 1], directions[:, 0])  # [-pi, pi]
+    # elevation = torch.asin(directions[:, 2])  # [-pi/2, pi/2]
 
     # Sector definitions
     middle_ring = 2  # third circle (index 2) is middle
