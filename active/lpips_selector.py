@@ -44,7 +44,7 @@ class LPIPSNBVSelector:
 
         for step in range(steps):
             optimizer.zero_grad()
-            cam_center = self.uv2car_torch(u, v) * r
+            cam_center = uv2car_torch(u, v) * r
             rendered = render_fn(cam_center)  # returns image
             loss = -self.compute_lpips_loss(rendered, reference_imgs)  # maximize distance
             loss.backward(retain_graph=True)
