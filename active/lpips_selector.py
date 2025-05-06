@@ -14,7 +14,10 @@ class LPIPSNBVSelector:
         ])
 
     def compute_lpips_loss(self, E_p, reference_imgs):
-        E_p_tensor = self.transform(E_p).unsqueeze(0).to(self.device)
+        if isinstance(E_p, torch.Tensor):
+            E_p_tensor = E_p.unsqueeze(0).to(self.device)
+        else:
+            E_p_tensor = self.transform(E_p).unsqueeze(0).to(self.device)
         total_loss = 0.0
         for ref_img in reference_imgs:
             ref_tensor = self.transform(ref_img).unsqueeze(0).to(self.device)
