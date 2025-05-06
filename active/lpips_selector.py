@@ -18,12 +18,16 @@ class LPIPSNBVSelector:
             E_p_tensor = E_p.unsqueeze(0).to(self.device)
         else:
             E_p_tensor = self.transform(E_p).unsqueeze(0).to(self.device)
-        total_loss = 0.0
+
+        total_lpips = 0.0
         for ref_img in reference_imgs:
-            ref_tensor = self.transform(ref_img).unsqueeze(0).to(self.device)
-            loss = self.lpips_model(E_p_tensor, ref_tensor)
-            total_loss += loss
-        return total_loss / len(reference_imgs)
+            if isinstance(ref_img, torch.Tensor):
+                ref_tensor = ref_img.unsqueeze(0).to(self.device)
+            else:
+                ref_tensor = self.transform(ref_img).unsqueeze(0).to(self.device)
+            lpips_val = self.lpips(E_p_tensor, ref_tensor)
+            total_lpips += lpips_val
+        return total_lpips / len(reference_imgs)
 
     def optimize_pose(self, init_pose, render_fn, reference_imgs,
                       lr=1e-2, steps=100):
