@@ -7,7 +7,8 @@ import random
 from gaussian_renderer import modified_render
 from gaussian_renderer import modified_render
 from scene.cameras import DummyCamera
-from utils.graphics_utils import look_at_torch, uv2car_torch
+from utils.graphics_utils import uv2car_torch
+from utils.camera_utils import look_at_torch
 
 def compute_fft_quality(image_tensor):
     grayscale = image_tensor.mean(dim=0)
