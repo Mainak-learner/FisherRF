@@ -181,7 +181,7 @@ def load_cam_info(info_dict, base_path, device="cuda"):
     
 
 def look_at(view, target):
-    view, target= view.reshape(-1), target.reshape(-1)
+    view, target= view.cpu().numpy().reshape(-1), target.cpu().numpy().reshape(-1)
     d = (-target+view)/np.linalg.norm(-target + view)
     up = np.array([0., 0., 1.])
     r = np.cross(up, d)
