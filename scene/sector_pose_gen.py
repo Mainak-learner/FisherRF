@@ -28,8 +28,11 @@ def divide_hemisphere_poses(poses_xyz, center, num_circles=5, num_poses_per_circ
     assert poses_xyz.shape[0] == num_circles * num_poses_per_circle, "Expected 150 poses"
 
     # Directions from object center
-    directions = poses_xyz - center
-    directions = directions / torch.norm(directions, dim=1, keepdim=True)
+    poses_np = poses.detach().cpu().numpy()  # <-- NEW
+    directions = poses_np - center           # <-- FIXED
+
+    norms = np.linalg.norm(directions, axis=1, keepdims=True)
+    directions = directions / norms
     azimuth = torch.atan2(directions[:, 1], directions[:, 0])  # [-pi, pi]
     elevation = torch.asin(directions[:, 2])  # [-pi/2, pi/2]
 
