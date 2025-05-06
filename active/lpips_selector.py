@@ -2,6 +2,7 @@
 import torch
 from lpipsPyTorch import lpips_func
 import torchvision.transforms as T
+import torch.nn.functional as F  # ensure this is at the top
 from torch.optim import Adam
 
 class LPIPSNBVSelector:
@@ -19,12 +20,17 @@ class LPIPSNBVSelector:
         else:
             E_p_tensor = self.transform(E_p).unsqueeze(0).to(self.device)
 
+        # ⬇️ Downsample to 64×64 for memory efficiency
+        E_p_tensor = F.interpolate(E_p_tensor, size=(64, 64), mode='bilinear', align_corners=False)
+
         total_lpips = 0.0
         for ref_img in reference_imgs:
             if isinstance(ref_img, torch.Tensor):
                 ref_tensor = ref_img.unsqueeze(0).to(self.device)
             else:
                 ref_tensor = self.transform(ref_img).unsqueeze(0).to(self.device)
+
+            ref_tensor = F.interpolate(ref_tensor, size=(64, 64), mode='bilinear', align_corners=False)  # ⬅️ Add this
             lpips_val = self.lpips_model(E_p_tensor, ref_tensor)
             total_lpips += lpips_val
         return total_lpips / len(reference_imgs)
