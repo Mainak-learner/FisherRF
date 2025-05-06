@@ -1,12 +1,12 @@
 # lpips_selector.py
 import torch
-import lpips
+from lpipsPyTorch import lpips_func
 import torchvision.transforms as T
 from torch.optim import Adam
 
 class LPIPSNBVSelector:
     def __init__(self, device='cuda'):
-        self.lpips_model = lpips.LPIPS(net='alex').to(device)
+        self.lpips_model = lpips_func("cuda", net_type='vgg')
         self.device = device
         self.transform = T.Compose([
             T.Resize((128, 128)),
