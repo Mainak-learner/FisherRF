@@ -21,16 +21,14 @@ from arguments import ModelParams, PipelineParams, OptimizationParams
 
 
 def render_fn(cam_center, object_center, pipe, gaussians, background, reference_camera):
-    R, T = look_at(cam_center, object_center)
+    R, T = look_at(cam_center.detach(), object_center.detach())
     dummy_cam = DummyCamera(R, T, reference_camera)
     return render(dummy_cam, gaussians, pipe, background)["render"]
 
-
 def render_with_oracle(cam_center, object_center, pipe, oracle_gaussians, background, reference_camera):
-    R, T = look_at(cam_center, object_center)
+    R, T = look_at(cam_center.detach(), object_center.detach())
     dummy_cam = DummyCamera(R, T, reference_camera)
     return render(dummy_cam, oracle_gaussians, pipe, background)["render"]
-
 
 def prepare_output_and_logger(args):
     if not args.model_path:
@@ -39,7 +37,6 @@ def prepare_output_and_logger(args):
     with open(os.path.join(args.model_path, "cfg_args"), 'w') as f:
         f.write(str(Namespace(**vars(args))))
     return None
-
 
 def training(dataset, opt, pipe, test_iterations, save_iterations, args):
     prepare_output_and_logger(dataset)
@@ -58,19 +55,17 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
     all_centers, all_uvs = generate_circular_hemisphere_poses(object_center, radius=sample_radius)
     circle_indices, middle_circle_indices, sector_map = divide_hemisphere_poses(all_centers, object_center.cpu().numpy())
 
-    # Train on middle circle views first
     middle_ids = np.random.choice(middle_circle_indices, size=6, replace=False)
     custom_train_indices = []
     for idx in middle_ids:
         cam_center = all_centers[idx]
         gt_img = render_with_oracle(cam_center, object_center, pipe, oracle_gaussians, torch.tensor([1.0, 1.0, 1.0], device="cuda"), reference_camera)
-        dummy_camera = DummyCamera(*look_at(cam_center, object_center), reference_camera, image=gt_img.detach())
+        dummy_camera = DummyCamera(*look_at(cam_center.detach(), object_center.detach()), reference_camera, image=gt_img.detach())
         scene.train_cameras[1.0].append(dummy_camera)
         custom_train_indices.append(len(scene.train_cameras[1.0]) - 1)
 
     background = torch.tensor([1.0, 1.0, 1.0], dtype=torch.float32, device="cuda")
 
-    # Train the untrained model with 6 middle circle views first
     for iteration in tqdm(range(1, 5001), desc="Initial Training on Middle Circle"):
         gaussians.update_learning_rate(iteration)
         cam_idx = custom_train_indices[randint(0, len(custom_train_indices)-1)]
@@ -86,7 +81,6 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
         gaussians.optimizer.step()
         gaussians.optimizer.zero_grad(set_to_none=True)
 
-    # Prepare LPIPS selector
     selector = LPIPSNBVSelector()
 
     for sector_id, sector_indices in sector_map.items():
@@ -117,7 +111,7 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
         new_cam_center = selector.uv_to_xyz(torch.tensor([u_opt]), torch.tensor([v_opt])) * r_opt + object_center
         oracle_img = render_with_oracle(new_cam_center, object_center, pipe, oracle_gaussians, background, reference_camera)
 
-        dummy_camera = DummyCamera(*look_at(new_cam_center, object_center), reference_camera, image=oracle_img.detach())
+        dummy_camera = DummyCamera(*look_at(new_cam_center.detach(), object_center.detach()), reference_camera, image=oracle_img.detach())
         scene.train_cameras[1.0].append(dummy_camera)
         new_idx = len(scene.train_cameras[1.0]) - 1
         custom_train_indices.append(new_idx)
@@ -160,9 +154,6 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
             scene.save(current_iter)
 
     return custom_train_indices
-
-
-
 
 
 if __name__ == "__main__":
