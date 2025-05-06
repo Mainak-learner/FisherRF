@@ -20,15 +20,15 @@ from scene.cameras import DummyCamera
 from arguments import ModelParams, PipelineParams, OptimizationParams
 
 
-def render_fn(cam_center, object_center, pipe, gaussians, background):
+def render_fn(cam_center, object_center, pipe, gaussians, background, reference_camera):
     R, T = look_at(cam_center, object_center)
-    dummy_cam = DummyCamera(R, T)
+    dummy_cam = DummyCamera(R, T, reference_camera)
     return render(dummy_cam, gaussians, pipe, background)["render"]
 
 
-def render_with_oracle(cam_center, object_center, pipe, oracle_gaussians, background):
+def render_with_oracle(cam_center, object_center, pipe, oracle_gaussians, background, reference_camera):
     R, T = look_at(cam_center, object_center)
-    dummy_cam = DummyCamera(R, T)
+    dummy_cam = DummyCamera(R, T, reference_camera)
     return render(dummy_cam, oracle_gaussians, pipe, background)["render"]
 
 
@@ -51,7 +51,8 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
     oracle_gaussians.load_ply(os.path.join(args.oracle_model_path, "point_cloud/iteration_30000/point_cloud.ply"))
 
     object_center = oracle_gaussians.get_xyz.mean(dim=0).detach()
-    sample_radius = torch.norm(scene.getAllCameras()[0].camera_center - object_center).item()
+    reference_camera = scene.getAllCameras()[0]
+    sample_radius = torch.norm(reference_camera.camera_center - object_center).item()
 
     all_centers, all_uvs = generate_circular_hemisphere_poses(object_center, radius=sample_radius)
     circle_indices, middle_circle_indices, sector_map = divide_hemisphere_poses(all_centers, object_center.cpu().numpy())
@@ -61,8 +62,8 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
     custom_train_indices = []
     for idx in middle_ids:
         cam_center = all_centers[idx]
-        gt_img = render_with_oracle(cam_center, object_center, pipe, oracle_gaussians, torch.tensor([1.0, 1.0, 1.0], device="cuda"))
-        dummy_camera = DummyCamera(*look_at(cam_center, object_center), scene.getAllCameras()[0], image=gt_img.detach())
+        gt_img = render_with_oracle(cam_center, object_center, pipe, oracle_gaussians, torch.tensor([1.0, 1.0, 1.0], device="cuda"), reference_camera)
+        dummy_camera = DummyCamera(*look_at(cam_center, object_center), reference_camera, image=gt_img.detach())
         scene.train_cameras[1.0].append(dummy_camera)
         custom_train_indices.append(len(scene.train_cameras[1.0]) - 1)
 
@@ -104,18 +105,18 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
         sector_ref_imgs = []
         for idx in sector_indices:
             cam_center = all_centers[idx]
-            img = render_fn(cam_center, object_center, pipe, gaussians, background)
+            img = render_fn(cam_center, object_center, pipe, gaussians, background, reference_camera)
             sector_ref_imgs.append(img)
 
         u_opt, v_opt, r_opt = selector.optimize_pose(
             init_pose,
-            lambda cam: render_fn(cam, object_center, pipe, gaussians, background),
+            lambda cam: render_fn(cam, object_center, pipe, gaussians, background, reference_camera),
             sector_ref_imgs
         )
         new_cam_center = selector.uv_to_xyz(torch.tensor([u_opt]), torch.tensor([v_opt])) * r_opt + object_center
-        oracle_img = render_with_oracle(new_cam_center, object_center, pipe, oracle_gaussians, background)
+        oracle_img = render_with_oracle(new_cam_center, object_center, pipe, oracle_gaussians, background, reference_camera)
 
-        dummy_camera = DummyCamera(*look_at(new_cam_center, object_center), scene.getAllCameras()[0], image=oracle_img.detach())
+        dummy_camera = DummyCamera(*look_at(new_cam_center, object_center), reference_camera, image=oracle_img.detach())
         scene.train_cameras[1.0].append(dummy_camera)
         new_idx = len(scene.train_cameras[1.0]) - 1
         custom_train_indices.append(new_idx)
@@ -158,6 +159,7 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
             scene.save(current_iter)
 
     return custom_train_indices
+
 
 
 
