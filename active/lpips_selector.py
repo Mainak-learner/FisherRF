@@ -25,7 +25,7 @@ class LPIPSNBVSelector:
                 ref_tensor = ref_img.unsqueeze(0).to(self.device)
             else:
                 ref_tensor = self.transform(ref_img).unsqueeze(0).to(self.device)
-            lpips_val = self.lpips(E_p_tensor, ref_tensor)
+            lpips_val = self.lpips_model(E_p_tensor, ref_tensor)
             total_lpips += lpips_val
         return total_lpips / len(reference_imgs)
 
