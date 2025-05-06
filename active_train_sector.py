@@ -138,7 +138,6 @@ if __name__ == "__main__":
     lp = ModelParams(parser)
     op = OptimizationParams(parser)
     pp = PipelineParams(parser)
-    parser.add_argument("--iterations", type=int, default=30000)
     parser.add_argument("--test_iterations", nargs="+", type=int, default=[15000, 20000, 25000, 30000])
     parser.add_argument("--save_iterations", nargs="+", type=int, default=[7000, 30000])
     parser.add_argument("--oracle_model_path", type=str, required=True, help="Path to pretrained 3DGS model for oracle rendering")
