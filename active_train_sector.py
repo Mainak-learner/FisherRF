@@ -25,6 +25,11 @@ def render_fn(cam_center, object_center, pipe, gaussians, background):
     dummy_cam = DummyCamera(R, T)
     return render(dummy_cam, gaussians, pipe, background)["render"]
 
+def render_with_oracle(cam_center, object_center, pipe, oracle_gaussians, background):
+    R, T = look_at(cam_center, object_center)
+    dummy_cam = DummyCamera(R, T)
+    return render(dummy_cam, oracle_gaussians, pipe, background)["render"]
+
 
 def prepare_output_and_logger(args):
     if not args.model_path:
@@ -40,6 +45,10 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
     gaussians = GaussianModel(dataset.sh_degree)
     scene = Scene(dataset, gaussians)
     gaussians.training_setup(opt)
+
+    # Load pretrained model as oracle
+    oracle_gaussians = GaussianModel(dataset.sh_degree)
+    oracle_gaussians.load_ply(os.path.join(args.oracle_model_path, "point_cloud/iteration_30000/point_cloud.ply"))
 
     object_center = gaussians.get_xyz.mean(dim=0).detach()
     all_poses = scene.getAllCameras()
@@ -77,9 +86,11 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
             ref_imgs
         )
         new_cam_center = selector.uv_to_xyz(torch.tensor([u_opt]), torch.tensor([v_opt])) * r_opt + object_center
-        new_img = render_fn(new_cam_center, object_center, pipe, gaussians, torch.tensor([1.0, 1.0, 1.0], device="cuda"))
-        ref_imgs.append(new_img)
+        oracle_img = render_with_oracle(new_cam_center, object_center, pipe, oracle_gaussians, torch.tensor([1.0, 1.0, 1.0], device="cuda"))
+        ref_imgs.append(oracle_img)
+
         dummy_camera = DummyCamera(*look_at(new_cam_center, object_center))
+        dummy_camera.original_image = oracle_img.detach()  # Assign GT image from oracle
         scene.train_cameras[1.0].append(dummy_camera)
         scene.all_train_set.add(len(scene.train_cameras[1.0]) - 1)
         scene.train_idxs.append(len(scene.train_cameras[1.0]) - 1)
@@ -131,6 +142,7 @@ if __name__ == "__main__":
     parser.add_argument("--iterations", type=int, default=30000)
     parser.add_argument("--test_iterations", nargs="+", type=int, default=[15000, 20000, 25000, 30000])
     parser.add_argument("--save_iterations", nargs="+", type=int, default=[7000, 30000])
+    parser.add_argument("--oracle_model_path", type=str, required=True, help="Path to pretrained 3DGS model for oracle rendering")
     args = parser.parse_args()
 
     wandb.init(project="active", config=vars(args))
