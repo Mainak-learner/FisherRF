@@ -15,7 +15,7 @@ def generate_circular_hemisphere_poses(center, num_circles=5, num_poses_per_circ
             x = radius * np.sin(elevation) * np.cos(azimuth)
             y = radius * np.sin(elevation) * np.sin(azimuth)
             z = radius * np.cos(elevation)
-            cam_center = torch.tensor([x, y, z], dtype=torch.float32) + center
+            cam_center = torch.tensor([x, y, z], dtype=torch.float32, device=center.device) + center
             all_poses.append(cam_center)
             all_uvs.append((azimuth / (2*np.pi), elevation / np.pi))
     return torch.stack(all_poses), all_uvs
