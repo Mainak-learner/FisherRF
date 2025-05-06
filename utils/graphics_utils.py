@@ -73,20 +73,6 @@ def getProjectionMatrix(znear, zfar, fovX, fovY):
 def fov2focal(fov, pixels):
     return pixels / (2 * math.tan(fov / 2))
 
-def look_at_torch(cam_center, target):
-    cam_center,target=cam_center.reshape(-1),target.reshape(-1)
-    d = (-target+cam_center)/torch.norm(-target+cam_center)
-    up = torch.tensor([0., 0., 1.], device='cuda')
-    r= torch.cross(up, d)/torch.norm(torch.cross(up, d))
-    u = torch.cross(d, r)
-
-    R=torch.stack([r, -u, -d], dim=0)
-    T=-R @ cam_center.view(3,1)
-
-    w2c = torch.cat([torch.cat([R, T], dim=1), torch.tensor([[0., 0., 0., 1.]], device='cuda')], dim=0)
-
-    return w2c.transpose(0,1)
-
 def uv2car_torch(u, v):
     # sampling in hemisphere
     theta = v * np.pi
