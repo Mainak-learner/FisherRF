@@ -61,9 +61,8 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
     custom_train_indices = []
     for idx in middle_ids:
         cam_center = all_centers[idx]
-        dummy_camera = DummyCamera(*look_at(cam_center, object_center))
         gt_img = render_with_oracle(cam_center, object_center, pipe, oracle_gaussians, torch.tensor([1.0, 1.0, 1.0], device="cuda"))
-        dummy_camera.original_image = gt_img.detach()
+        dummy_camera = DummyCamera(*look_at(cam_center, object_center), scene.getAllCameras()[0], image=gt_img.detach())
         scene.train_cameras[1.0].append(dummy_camera)
         custom_train_indices.append(len(scene.train_cameras[1.0]) - 1)
 
@@ -116,8 +115,7 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
         new_cam_center = selector.uv_to_xyz(torch.tensor([u_opt]), torch.tensor([v_opt])) * r_opt + object_center
         oracle_img = render_with_oracle(new_cam_center, object_center, pipe, oracle_gaussians, background)
 
-        dummy_camera = DummyCamera(*look_at(new_cam_center, object_center))
-        dummy_camera.original_image = oracle_img.detach()
+        dummy_camera = DummyCamera(*look_at(new_cam_center, object_center), scene.getAllCameras()[0], image=oracle_img.detach())
         scene.train_cameras[1.0].append(dummy_camera)
         new_idx = len(scene.train_cameras[1.0]) - 1
         custom_train_indices.append(new_idx)
@@ -160,6 +158,7 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
             scene.save(current_iter)
 
     return custom_train_indices
+
 
 
 
