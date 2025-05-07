@@ -67,27 +67,24 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
     np.save("object_center.npy", object_center.cpu().numpy())
     np.save("middle_circle_indices.npy", np.array(middle_ids))
 
-    image_dir = "oracle_middle_gt"
-    oracle_middle_images = []
+    oracle_image_paths = []
     selected_middle_centers = []
     for i,idx in enumerate(middle_ids):
         cam_center = all_centers[idx]
         gt_img = render_with_oracle(cam_center, object_center, pipe, oracle_gaussians, torch.tensor([1.0, 1.0, 1.0], device="cuda"), reference_camera)
-        img_path = image_dir + f"/pose_{i}.png"
+        img_path = f"oracle_middle_gt/pose_{i}.png"
         TF.to_pil_image(gt_img.clamp(0, 1).cpu()).save(img_path)
 
         # Encode to base64
-        with open(img_path, "rb") as f:
-            img_b64 = base64.b64encode(f.read()).decode("utf-8")
-            oracle_middle_images.append(f"data:image/png;base64,{img_b64}")
+        oracle_image_paths.append(f"pose_{i}.png")
         dummy_camera = DummyCamera(*look_at(cam_center.detach(), object_center.detach()), reference_camera, image=gt_img.detach())
         selected_middle_centers.append(cam_center.cpu().numpy().tolist())
         custom_cams.append(dummy_camera)
 
     with open("oracle_middle_gt/pose_centers.json", "w") as f:
         json.dump(selected_middle_centers, f)
-    with open(os.path.join(image_dir, "image_list.json"), "w") as f:
-        json.dump(oracle_middle_images, f)
+    with open("oracle_middle_gt/image_filenames.json", "w") as f:
+        json.dump(oracle_image_paths, f)
     background = torch.tensor([1.0, 1.0, 1.0], dtype=torch.float32, device="cuda")
 
     for iteration in tqdm(range(1, args.initial_train), desc="Initial Training on Middle Circle"):
