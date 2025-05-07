@@ -103,7 +103,13 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
         gaussians.optimizer.zero_grad(set_to_none=True)
 
     selector = LPIPSNBVSelector()
+    os.makedirs("middle_render_vs_gt", exist_ok=True)
+    for idx, cam in enumerate(custom_cams):
+        rendered = render(cam, gaussians, pipe, background)["render"].clamp(0, 1)
+        gt_image = cam.original_image.clamp(0, 1).cpu()
 
+        save_image(rendered.cpu(), f"middle_render_vs_gt/render_{idx}.png")
+        save_image(gt_image, f"middle_render_vs_gt/gt_{idx}.png")
     for sector_id, sector_indices in sector_map.items():
         if len(sector_indices) == 0:
             continue
