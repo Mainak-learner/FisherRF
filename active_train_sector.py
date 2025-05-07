@@ -28,8 +28,7 @@ def render_fn(cam_center, object_center, pipe, gaussians, background, reference_
     return render(dummy_cam, gaussians, pipe, background)["render"]
 
 def render_with_oracle(cam_center, object_center, pipe, oracle_gaussians, background, reference_camera):
-    w2c = look_at_torch(cam_center.detach(), object_center.detach())
-    R, T = w2c[:3,:3], w2c[:3,3]
+    R, T = look_at(cam_center.detach(), object_center.detach())
     dummy_cam = DummyCamera(R, T, reference_camera)
     return render(dummy_cam, oracle_gaussians, pipe, background)["render"]
 
