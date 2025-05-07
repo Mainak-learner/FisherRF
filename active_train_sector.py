@@ -18,6 +18,7 @@ from scene.sector_pose_gen import generate_circular_hemisphere_poses, divide_hem
 from utils.camera_utils import look_at
 from utils.graphics_utils import uv2car_torch
 from scene.cameras import DummyCamera
+from torchvision.utils import save_image
 from arguments import ModelParams, PipelineParams, OptimizationParams
 
 
@@ -58,12 +59,11 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
     middle_ids = np.random.choice(middle_circle_indices, size=6, replace=False)
     custom_cams = []
 
-    np.save("all_centers.npy", all_centers.cpu().numpy())
-    np.save("object_center.npy", object_center.cpu().numpy())
-    np.save("middle_circle_indices.npy", np.array(middle_ids))
+    os.makedirs("oracle_middle_gt", exist_ok=True)
     for idx in middle_ids:
         cam_center = all_centers[idx]
         gt_img = render_with_oracle(cam_center, object_center, pipe, oracle_gaussians, torch.tensor([1.0, 1.0, 1.0], device="cuda"), reference_camera)
+        save_image(gt_image.clamp(0,1).cpu(), f"oracle_middle_gt/pose_{i}.png")
         dummy_camera = DummyCamera(*look_at(cam_center.detach(), object_center.detach()), reference_camera, image=gt_img.detach())
         custom_cams.append(dummy_camera)
 

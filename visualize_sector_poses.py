@@ -75,4 +75,4 @@ app.layout = html.Div([
 
 # Run with: python visualize_sector_poses.py
 if __name__ == "__main__":
-    app.run_server(debug=False, port=8050)
+    app.run(debug=False, port=8050)
