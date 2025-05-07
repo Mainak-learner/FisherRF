@@ -57,6 +57,10 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
 
     middle_ids = np.random.choice(middle_circle_indices, size=6, replace=False)
     custom_cams = []
+
+    np.save("all_centers.npy", all_centers.cpu().numpy())
+    np.save("object_center.npy", object_center.cpu().numpy())
+    np.save("middle_circle_indices.npy", np.array(middle_ids))
     for idx in middle_ids:
         cam_center = all_centers[idx]
         gt_img = render_with_oracle(cam_center, object_center, pipe, oracle_gaussians, torch.tensor([1.0, 1.0, 1.0], device="cuda"), reference_camera)
@@ -111,7 +115,7 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
 
         dummy_camera = DummyCamera(*look_at(new_cam_center.detach(), object_center.detach()), reference_camera, image=oracle_img.detach())
         custom_cams.append(dummy_camera)
-
+    
     print(f"Selected 18 training views. Final phase of training begins now...")
 
     lpips_metric = lpips_func("cuda", net_type='vgg')
