@@ -69,6 +69,7 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
 
     image_dir = "oracle_middle_gt"
     oracle_middle_images = []
+    selected_middle_centers = []
     for i,idx in enumerate(middle_ids):
         cam_center = all_centers[idx]
         gt_img = render_with_oracle(cam_center, object_center, pipe, oracle_gaussians, torch.tensor([1.0, 1.0, 1.0], device="cuda"), reference_camera)
@@ -80,8 +81,11 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
             img_b64 = base64.b64encode(f.read()).decode("utf-8")
             oracle_middle_images.append(f"data:image/png;base64,{img_b64}")
         dummy_camera = DummyCamera(*look_at(cam_center.detach(), object_center.detach()), reference_camera, image=gt_img.detach())
+        selected_middle_centers.append(cam_center.cpu().numpy().tolist())
         custom_cams.append(dummy_camera)
 
+    with open("oracle_middle_gt/pose_centers.json", "w") as f:
+        json.dump(selected_middle_centers, f)
     with open(os.path.join(image_dir, "image_list.json"), "w") as f:
         json.dump(oracle_middle_images, f)
     background = torch.tensor([1.0, 1.0, 1.0], dtype=torch.float32, device="cuda")

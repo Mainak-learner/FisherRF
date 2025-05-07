@@ -186,7 +186,7 @@ def look_at(cam_center, target):
     d = (target - cam_center) / torch.norm(target - cam_center)  # ✅ fix this line
 
     up = torch.tensor([0., 0., 1.], device=cam_center.device, dtype=torch.float32)
-    if torch.abs(torch.dot(d, up)) > 0.99:
+    if torch.abs(torch.dot(d, up)) > 0.9:
         up = torch.tensor([1., 0., 0.], device=cam_center.device, dtype=torch.float32)
 
     r = torch.cross(up, d); r = r / torch.norm(r)
