@@ -101,15 +101,24 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
         loss.backward()
         gaussians.optimizer.step()
         gaussians.optimizer.zero_grad(set_to_none=True)
+    
+    psnr_total, ssim_total, lpips_total = 0.0, 0.0, 0.0
 
     selector = LPIPSNBVSelector()
     os.makedirs("middle_render_vs_gt", exist_ok=True)
     for idx, cam in enumerate(custom_cams):
         rendered = render(cam, gaussians, pipe, background)["render"].clamp(0, 1)
         gt_image = cam.original_image.clamp(0, 1).cpu()
+        psnr_total += psnr(rendered, gt).mean().item()
+        ssim_total += ssim(rendered, gt).mean().item()
+        lpips_total += lpips_fn(rendered, gt).mean().item()
 
         save_image(rendered.cpu(), f"middle_render_vs_gt/render_{idx}.png")
         save_image(gt_image, f"middle_render_vs_gt/gt_{idx}.png")
+    
+    N = len(custom_cams)
+    print(f"[Middle Circle] PSNR: {psnr_total/N:.2f}, SSIM: {ssim_total/N:.4f}, LPIPS: {lpips_total/N:.4f}")
+
     for sector_id, sector_indices in sector_map.items():
         if len(sector_indices) == 0:
             continue
