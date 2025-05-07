@@ -26,8 +26,8 @@ import torchvision.transforms.functional as TF
 from arguments import ModelParams, PipelineParams, OptimizationParams
 
 
-def render_fn(cam_center, object_center, pipe, gaussians, background, reference_camera):
-    R, T = look_at(cam_center.detach(), object_center.detach())
+def render_fn(cam_center, object_center, pipe, gaussians, background, reference_camera, debug=False):
+    R, T = look_at(cam_center.detach(), object_center.detach(), debug)
     dummy_cam = DummyCamera(R, T, reference_camera)
     return render(dummy_cam, gaussians, pipe, background)["render"]
 
@@ -126,7 +126,7 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
 
         u_opt, v_opt, r_opt = selector.optimize_pose(
             init_pose,
-            lambda cam: render_fn(cam, object_center, pipe, gaussians, background, reference_camera),
+            lambda cam: render_fn(cam, object_center, pipe, gaussians, background, reference_camera, debug=True),
             sector_ref_imgs
         )
         new_cam_center = uv2car_torch(torch.tensor([u_opt], device=object_center.device), torch.tensor([v_opt], device=object_center.device)) * r_opt + object_center

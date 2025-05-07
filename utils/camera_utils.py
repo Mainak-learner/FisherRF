@@ -180,7 +180,7 @@ def load_cam_info(info_dict, base_path, device="cuda"):
                   image=th_img, gt_alpha_mask=None, uid=info_dict["uid"], data_device=device, image_name=info_dict["image_name"])
     
 
-def look_at(cam_center, target):
+def look_at(cam_center, target, debug=False):
     d = (-target.detach().cpu().numpy() + cam_center.detach().cpu().numpy())
     d = d / np.linalg.norm(d)
     up = np.array([0, 0, 1])
@@ -188,7 +188,10 @@ def look_at(cam_center, target):
     r /= np.linalg.norm(r)
     u = np.cross(d, r)
     u /= np.linalg.norm(u)
-
+    if debug:
+        print("d:", d, "norm:", np.linalg.norm(d))
+        print("r:", r, "norm:", np.linalg.norm(r))
+        print("u:", u, "norm:", np.linalg.norm(u))
     c2w = np.eye(4)
     c2w[:3, :3] = np.linalg.inv(np.stack([r, u, d], axis=0))
     c2w[:3, 3] = cam_center.detach().cpu().numpy()
