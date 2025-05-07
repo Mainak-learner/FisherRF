@@ -102,9 +102,8 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
         gaussians.optimizer.step()
         gaussians.optimizer.zero_grad(set_to_none=True)
     
-        lpips = lpips_func("cuda", net_type='vgg')
-        psnr_total, ssim_total, lpips_total = 0.0, 0.0, 0.0
-
+    lpips = lpips_func("cuda", net_type='vgg')
+    psnr_total, ssim_total, lpips_total = 0.0, 0.0, 0.0
     os.makedirs("middle_render_vs_gt", exist_ok=True)
     for idx, cam in enumerate(custom_cams):
         rendered = render(cam, gaussians, pipe, background)["render"].clamp(0, 1)
