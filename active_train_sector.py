@@ -109,9 +109,9 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
     for idx, cam in enumerate(custom_cams):
         rendered = render(cam, gaussians, pipe, background)["render"].clamp(0, 1)
         gt_image = cam.original_image.clamp(0, 1).cpu()
-        psnr_total += psnr(rendered, gt).mean().item()
-        ssim_total += ssim(rendered, gt).mean().item()
-        lpips_total += lpips_fn(rendered, gt).mean().item()
+        psnr_total += psnr(rendered, gt_image).mean().item()
+        ssim_total += ssim(rendered, gt_image).mean().item()
+        lpips_total += lpips_fn(rendered, gt_image).mean().item()
 
         save_image(rendered.cpu(), f"middle_render_vs_gt/render_{idx}.png")
         save_image(gt_image, f"middle_render_vs_gt/gt_{idx}.png")
