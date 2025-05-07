@@ -181,21 +181,24 @@ def load_cam_info(info_dict, base_path, device="cuda"):
     
 
 def look_at(cam_center, target):
-    cam_center = cam_center.reshape(-1).float()
-    target = target.reshape(-1).float()
-    d = (target - cam_center) / torch.norm(target - cam_center)  # ✅ fix this line
+    d = (-target.detach().cpu().numpy() + cam_center.detach().cpu().numpy())
+    d = d / np.linalg.norm(d)
+    up = np.array([0, 0, 1])
+    r = np.cross(up, d)
+    r /= np.linalg.norm(r)
+    u = np.cross(d, r)
+    u /= np.linalg.norm(u)
 
-    up = torch.tensor([0., 0., 1.], device=cam_center.device, dtype=torch.float32)
-    if torch.abs(torch.dot(d, up)) > 0.9:
-        up = torch.tensor([1., 0., 0.], device=cam_center.device, dtype=torch.float32)
+    c2w = np.eye(4)
+    c2w[:3, :3] = np.linalg.inv(np.stack([r, u, d], axis=0))
+    c2w[:3, 3] = cam_center.detach().cpu().numpy()
 
-    r = torch.cross(up, d); r = r / torch.norm(r)
-    u = torch.cross(d, r); u = u / torch.norm(u)
+    c2w[:3, 1:3] *= -1  # Y and Z flip
+    w2c = np.linalg.inv(c2w)
 
-    R = torch.stack([r, -u, -d], dim=0)  # -u, -d to match right-hand coord system
-    T = (-R @ cam_center.view(3, 1)).squeeze(-1)
-
-    return R.cpu().numpy(), T.cpu().numpy()
+    R = w2c[:3, :3].T  # transpose for CUDA compatibility
+    T = w2c[:3, 3]
+    return R, T
 
 def look_at_torch(cam_center, target):
     cam_center,target=cam_center.reshape(-1),target.reshape(-1)
