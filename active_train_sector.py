@@ -60,7 +60,7 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
     custom_cams = []
 
     os.makedirs("oracle_middle_gt", exist_ok=True)
-    for idx in middle_ids:
+    for i,idx in enumerate(middle_ids):
         cam_center = all_centers[idx]
         gt_img = render_with_oracle(cam_center, object_center, pipe, oracle_gaussians, torch.tensor([1.0, 1.0, 1.0], device="cuda"), reference_camera)
         save_image(gt_img.clamp(0,1).cpu(), f"oracle_middle_gt/pose_{i}.png")
