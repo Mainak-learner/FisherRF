@@ -75,4 +75,4 @@ app.layout = html.Div([
 
 # Run with: python visualize_sector_poses.py
 if __name__ == "__main__":
-    app.run(mode='inline', port=8050)
+    app.run(mode='inline',)
