@@ -1,7 +1,7 @@
 import numpy as np
 import torch
-import plotly.graph_objects as go
-from dash import Dash, dcc, html
+from jupyter_dash import JupyterDash
+from dash import dcc, html, Input, Output
 
 # ---------- CONFIGURATION ----------
 # Load from .npy or hardcode your tensors here
@@ -66,7 +66,7 @@ fig = go.Figure(data=[
 fig.update_layout(scene=dict(aspectmode='data'), height=700)
 
 # ---------- DASH APP ----------
-app = Dash(__name__)
+app = JupyterDash(__name__)
 app.layout = html.Div([
     html.H2("Sector-based Pose Sampling Visualization"),
     dcc.Graph(id='plot-3d', figure=fig)
@@ -74,4 +74,4 @@ app.layout = html.Div([
 
 # Run with: python visualize_sector_poses.py
 if __name__ == "__main__":
-    app.run(jupyter_mode='inline')
+    app.run(mode='inline', port=8050)
