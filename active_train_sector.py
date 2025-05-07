@@ -121,8 +121,7 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
     for iteration in tqdm(range(1, full_training_iters + 1), desc="Full Training Loop"):
         current_iter = iteration
         gaussians.update_learning_rate(current_iter)
-        cam_idx = custom_cams[randint(0, len(custom_cams)-1)]
-        viewpoint_cam = scene.getCamera(cam_idx)
+        viewpoint_cam = custom_cams[randint(0, len(custom_cams)-1)]
 
         render_pkg = render(viewpoint_cam, gaussians, pipe, background)
         image = render_pkg["render"]
