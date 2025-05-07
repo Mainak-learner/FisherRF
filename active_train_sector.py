@@ -15,7 +15,7 @@ from utils.image_utils import psnr
 from lpipsPyTorch import lpips_func
 from active.lpips_selector import LPIPSNBVSelector
 from scene.sector_pose_gen import generate_circular_hemisphere_poses, divide_hemisphere_poses
-from utils.camera_utils import look_at
+from utils.camera_utils import look_at, look_at_torch
 from utils.graphics_utils import uv2car_torch
 from scene.cameras import DummyCamera
 from torchvision.utils import save_image
@@ -28,7 +28,8 @@ def render_fn(cam_center, object_center, pipe, gaussians, background, reference_
     return render(dummy_cam, gaussians, pipe, background)["render"]
 
 def render_with_oracle(cam_center, object_center, pipe, oracle_gaussians, background, reference_camera):
-    R, T = look_at(cam_center.detach(), object_center.detach())
+    w2c = look_at_torch(cam_center.detach(), object_center.detach())
+    R, T = w2c[:3,:3], w2c[:3,3]
     dummy_cam = DummyCamera(R, T, reference_camera)
     return render(dummy_cam, oracle_gaussians, pipe, background)["render"]
 
