@@ -19,6 +19,10 @@ from utils.camera_utils import look_at, look_at_torch
 from utils.graphics_utils import uv2car_torch
 from scene.cameras import DummyCamera
 from torchvision.utils import save_image
+import base64
+import json
+from PIL import Image
+import torchvision.transforms.functional as TF
 from arguments import ModelParams, PipelineParams, OptimizationParams
 
 
@@ -59,17 +63,27 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
     middle_ids = np.random.choice(middle_circle_indices, size=6, replace=False)
     custom_cams = []
 
-    os.makedirs("oracle_middle_gt", exist_ok=True)
+    np.save("all_centers.npy", all_centers.cpu().numpy())
+    np.save("object_center.npy", object_center.cpu().numpy())
+    np.save("middle_circle_indices.npy", np.array(middle_ids))
+
+    image_dir = "oracle_middle_gt"
+    oracle_middle_images = []
     for i,idx in enumerate(middle_ids):
         cam_center = all_centers[idx]
-        print("Object center:", object_center.cpu().numpy())
-        print("Sampled cam_center:", cam_center.cpu().numpy())
-        print("cam_center - object_center:", cam_center.cpu().numpy() - object_center.cpu().numpy())
         gt_img = render_with_oracle(cam_center, object_center, pipe, oracle_gaussians, torch.tensor([1.0, 1.0, 1.0], device="cuda"), reference_camera)
-        save_image(gt_img.clamp(0,1).cpu(), f"oracle_middle_gt/pose_{i}.png")
+        img_path = image_dir + f"/pose_{i}.png"
+        TF.to_pil_image(gt_img.clamp(0, 1).cpu()).save(img_path)
+
+        # Encode to base64
+        with open(img_path, "rb") as f:
+            img_b64 = base64.b64encode(f.read()).decode("utf-8")
+            oracle_middle_images.append(f"data:image/png;base64,{img_b64}")
         dummy_camera = DummyCamera(*look_at(cam_center.detach(), object_center.detach()), reference_camera, image=gt_img.detach())
         custom_cams.append(dummy_camera)
 
+    with open(os.path.join(image_dir, "image_list.json"), "w") as f:
+        json.dump(oracle_middle_images, f)
     background = torch.tensor([1.0, 1.0, 1.0], dtype=torch.float32, device="cuda")
 
     for iteration in tqdm(range(1, args.initial_train), desc="Initial Training on Middle Circle"):

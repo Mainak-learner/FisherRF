@@ -183,16 +183,16 @@ def load_cam_info(info_dict, base_path, device="cuda"):
 def look_at(cam_center, target):
     cam_center = cam_center.reshape(-1).float()
     target = target.reshape(-1).float()
+    d = (target - cam_center) / torch.norm(target - cam_center)  # ✅ fix this line
 
-    d = (cam_center - target) / torch.norm(cam_center - target)  # camera looks toward target
-    up = torch.tensor([0., 0., 1.], device=cam_center.device)
-    if abs(torch.dot(d, up)) > 0.99:
-        up = torch.tensor([1., 0., 0.], device=cam_center.device)
+    up = torch.tensor([0., 0., 1.], device=cam_center.device, dtype=torch.float32)
+    if torch.abs(torch.dot(d, up)) > 0.99:
+        up = torch.tensor([1., 0., 0.], device=cam_center.device, dtype=torch.float32)
 
     r = torch.cross(up, d); r = r / torch.norm(r)
-    u = torch.cross(d, r);  u = u / torch.norm(u)
+    u = torch.cross(d, r); u = u / torch.norm(u)
 
-    R = torch.stack([r, -u, -d], dim=0)
+    R = torch.stack([r, -u, -d], dim=0)  # -u, -d to match right-hand coord system
     T = (-R @ cam_center.view(3, 1)).squeeze(-1)
 
     return R.cpu().numpy(), T.cpu().numpy()
