@@ -74,4 +74,4 @@ app.layout = html.Div([
 
 # Run with: python visualize_sector_poses.py
 if __name__ == "__main__":
-    app.run(jupyter_mode='external', port=8050)
+    app.run(jupyter_mode='inline')
