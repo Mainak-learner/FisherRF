@@ -102,6 +102,7 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
         gaussians.optimizer.step()
         gaussians.optimizer.zero_grad(set_to_none=True)
     
+    lpips = lpips_func("cuda", net_type='vgg')
     psnr_total, ssim_total, lpips_total = 0.0, 0.0, 0.0
 
     selector = LPIPSNBVSelector()
@@ -111,7 +112,7 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
         gt_image = cam.original_image.clamp(0, 1).cpu()
         psnr_total += psnr(rendered, gt_image).mean().item()
         ssim_total += ssim(rendered, gt_image).mean().item()
-        lpips_total += lpips_fn(rendered, gt_image).mean().item()
+        lpips_total += lpips(rendered, gt_image).mean().item()
 
         save_image(rendered.cpu(), f"middle_render_vs_gt/render_{idx}.png")
         save_image(gt_image, f"middle_render_vs_gt/gt_{idx}.png")
@@ -152,7 +153,6 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
     
     print(f"Selected 18 training views. Final phase of training begins now...")
 
-    lpips_metric = lpips_func("cuda", net_type='vgg')
     total_iterations = args.iterations
     full_training_iters = total_iterations
 
