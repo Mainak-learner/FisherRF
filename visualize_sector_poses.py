@@ -1,6 +1,7 @@
 import numpy as np
 import torch
 from jupyter_dash import JupyterDash
+import plotly.graph_objects as go
 from dash import dcc, html, Input, Output
 
 # ---------- CONFIGURATION ----------
