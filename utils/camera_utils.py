@@ -188,10 +188,9 @@ def look_at(cam_center, target, debug=False):
     r /= np.linalg.norm(r)
     u = np.cross(d, r)
     u /= np.linalg.norm(u)
-    if debug:
-        print("d:", d, "norm:", np.linalg.norm(d))
-        print("r:", r, "norm:", np.linalg.norm(r))
-        print("u:", u, "norm:", np.linalg.norm(u))
+    d = d.reshape(-1)
+    r = r.reshape(-1)
+    u = u.reshape(-1)
     c2w = np.eye(4)
     c2w[:3, :3] = np.linalg.inv(np.stack([r, u, d], axis=0))
     c2w[:3, 3] = cam_center.detach().cpu().numpy()
