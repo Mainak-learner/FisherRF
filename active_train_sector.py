@@ -108,7 +108,7 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
     selector = LPIPSNBVSelector()
     os.makedirs("middle_render_vs_gt", exist_ok=True)
     for idx, cam in enumerate(custom_cams):
-        rendered = render(cam, gaussians, pipe, background)["render"].clamp(0, 1)
+        rendered = render(cam, gaussians, pipe, background)["render"].clamp(0, 1).cpu()
         gt_image = cam.original_image.clamp(0, 1).cpu()
         psnr_total += psnr(rendered, gt_image).mean().item()
         ssim_total += ssim(rendered, gt_image).mean().item()
