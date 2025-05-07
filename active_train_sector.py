@@ -139,8 +139,8 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
             for cam in test_cams:
                 test_img = render(cam, gaussians, pipe, background)["render"].clamp(0, 1)
                 gt_img = cam.original_image.cuda().clamp(0, 1)
-                psnr_total += psnr(test_img, gt_img).item()
-                ssim_total += ssim(test_img, gt_img).item()
+                psnr_total += psnr(test_img, gt_img).mean().item()
+                ssim_total += ssim(test_img, gt_img).mean().item()
                 lpips_total += lpips_metric(test_img, gt_img).mean().item()
             num = len(test_cams)
             print(f"[ITER {current_iter}] PSNR {psnr_total/num:.2f} SSIM {ssim_total/num:.4f} LPIPS {lpips_total/num:.4f}")
