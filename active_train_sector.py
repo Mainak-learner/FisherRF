@@ -64,9 +64,9 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
     custom_cams = []
 
     np.save("all_centers.npy", all_centers.cpu().numpy())
-    np.save("oracle_middle_gt/object_center.npy", object_center.cpu().numpy())
-    np.save("oracle_middle_gt/object_points.npy", oracle_gaussians.get_xyz.detach().cpu().numpy())
-    np.save("oracle_middle_gt/object_colors.npy", oracle_gaussians._features_dc.detach().cpu().numpy())
+    np.save("oracle_gt_visualization/object_center.npy", object_center.cpu().numpy())
+    np.save("oracle_gt_visualization/object_points.npy", oracle_gaussians.get_xyz.detach().cpu().numpy())
+    np.save("oracle_gt_visualization/object_colors.npy", oracle_gaussians._features_dc.detach().cpu().numpy())
 
     oracle_image_paths = []
     selected_middle_centers = []
@@ -144,11 +144,11 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
         )
         new_cam_center = uv2car_torch(torch.tensor([u_opt], device=object_center.device), torch.tensor([v_opt], device=object_center.device)) * r_opt + object_center
         oracle_img = render_with_oracle(new_cam_center, object_center, pipe, oracle_gaussians, background, reference_camera)
-        img_path = f"oracle_gt_visualization/gt_{i}.png"
-        TF.to_pil_image(oracle_img.clamp(0, 1).cpu()).save(img_path)
 
         dummy_camera = DummyCamera(*look_at(new_cam_center.detach(), object_center.detach()), reference_camera, image=oracle_img.detach())
         custom_cams.append(dummy_camera)
+        img_path = f"oracle_gt_visualization/gt_{len(custom_cams)-1}.png"
+        TF.to_pil_image(oracle_img.clamp(0, 1).cpu()).save(img_path)
     
     print(f"Selected 18 training views. Final phase of training begins now...")
 
