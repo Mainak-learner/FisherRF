@@ -180,7 +180,7 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
             psnr_total, ssim_total, lpips_total = 0.0, 0.0, 0.0
             test_save_path = f"test_inspection/iter_{current_iter}"
             os.makedirs(test_save_path, exist_ok=True)
-            for cam in test_cams:
+            for idx, cam in enumerate(test_cams):
                 test_img = render(cam, gaussians, pipe, background)["render"].clamp(0, 1)
                 gt_img = cam.original_image.cuda().clamp(0, 1)
                 psnr_total += psnr(test_img, gt_img).mean().item()
