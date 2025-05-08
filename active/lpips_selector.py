@@ -5,6 +5,7 @@ import torchvision.transforms as T
 import torch.nn.functional as F  # ensure this is at the top
 from torch.optim import Adam
 from tqdm import tqdm
+import numpy as np
 from utils.graphics_utils import uv2car_torch
 
 class LPIPSNBVSelector:
@@ -38,23 +39,45 @@ class LPIPSNBVSelector:
         return total_lpips / len(reference_imgs)
 
 
-    def optimize_pose(self, init_pose, render_fn, reference_imgs,
-                    lr=1e-2, steps=100):
-        u, v, r = [torch.tensor([v_], requires_grad=True, device=self.device, dtype=torch.float32)
-                for v_ in init_pose]
+    def optimize_pose(self, init_pose, render_fn, reference_imgs, sector_indices, all_uvs, sample_radius,
+                      lr=1e-2, steps=100):
+        """
+        init_pose: tuple of (u, v, r)
+        render_fn: function(cam_center) -> image
+        reference_imgs: list of rendered images from sector
+        sector_indices: np.array of indices into all_centers for this sector
+        all_centers: torch.Tensor of shape (150, 3) (centered at origin)
+        object_center: torch.Tensor of shape (3,)
+        """
+
+        # Optimize u, v, r
+        u, v, r = [torch.tensor([x], requires_grad=True, dtype=torch.float32, device=self.device)
+                   for x in init_pose]
         optimizer = Adam([u, v, r], lr=lr)
 
-        for step in tqdm(range(steps), desc="Optimizing NBV"):
+        # Compute clamping range from sector
+        sector_uvs = [all_uvs[i] for i in sector_indices]
+        u_vals = [uv[0] for uv in sector_uvs]
+        v_vals = [uv[1] for uv in sector_uvs]
+
+        margin = 0.01
+        u_min = min(u_vals)
+        u_max = max(u_vals)
+        v_min = min(v_vals)
+        v_max = max(v_vals)
+        r_min = sampled_radius - margin
+        r_max = sampled_radius + margin
+
+        for _ in tqdm(range(steps), desc="Optimizing NBV"):
             optimizer.zero_grad()
-            cam_center = uv2car_torch(u, v).to(self.device) * r
-            rendered = render_fn(cam_center)  # returns image
-            loss = -self.compute_lpips_loss(rendered, reference_imgs)  # maximize distance
-            loss.backward(retain_graph=True)
+            cam_center = uv2car_torch(u, v) * r  # Positioned around origin
+            rendered = render_fn(cam_center)
+            loss = -self.compute_lpips_loss(rendered, reference_imgs)  # Maximize LPIPS
+            loss.backward()
             optimizer.step()
 
-            # Enforce constraints
-            v.data.clamp_(0.01, 0.49)
-            u.data.remainder_(1.0)
-            r.data.clamp_(3.0, 5.5)
+            u.data.clamp_(u_min, u_max)
+            v.data.clamp_(v_min, v_max)
+            r.data.clamp_(r_min, r_max)
 
         return u.item(), v.item(), r.item()

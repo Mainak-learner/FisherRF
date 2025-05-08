@@ -55,9 +55,9 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
 
     object_center = oracle_gaussians.get_xyz.mean(dim=0).detach()
     reference_camera = scene.getAllCameras()[0]
-    sample_radius = torch.norm(reference_camera.camera_center - object_center).item()
+    sample_radius = torch.Tensor(reference_camera.camera_center).item()
 
-    all_centers, all_uvs = generate_circular_hemisphere_poses(object_center, radius=sample_radius)
+    all_centers, all_uvs = generate_circular_hemisphere_poses(torch.tensor([0, 0, 0], device=object_center.device), radius=sample_radius)
     circle_indices, middle_circle_indices, sector_map = divide_hemisphere_poses(all_centers, object_center.cpu().numpy())
 
     middle_ids = np.random.choice(middle_circle_indices, size=6, replace=False)
@@ -139,7 +139,7 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
 
         sector_centers = all_centers[sector_indices]
         mean_center = sector_centers.mean(0)
-        dir_vec = mean_center - object_center
+        dir_vec = mean_center
         radius = torch.norm(dir_vec).item()
         dir_vec /= radius
 
@@ -156,9 +156,12 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
         u_opt, v_opt, r_opt = selector.optimize_pose(
             init_pose,
             lambda cam: render_fn(cam, object_center, pipe, gaussians, background, reference_camera, debug=True),
-            sector_ref_imgs
+            sector_ref_imgs,
+            sector_indices,
+            all_uvs, 
+            sample_radius
         )
-        new_cam_center = uv2car_torch(torch.tensor([u_opt], device=object_center.device), torch.tensor([v_opt], device=object_center.device)) * r_opt + object_center
+        new_cam_center = uv2car_torch(torch.tensor([u_opt], device=object_center.device), torch.tensor([v_opt], device=object_center.device)) * r_opt
         oracle_img = render_with_oracle(new_cam_center, object_center, pipe, oracle_gaussians, background, reference_camera)
 
         dummy_camera = DummyCamera(*look_at(new_cam_center.detach(), object_center.detach()), reference_camera, image=oracle_img.detach())
