@@ -55,7 +55,7 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
 
     object_center = oracle_gaussians.get_xyz.mean(dim=0).detach()
     reference_camera = scene.getAllCameras()[0]
-    sample_radius = torch.Tensor(reference_camera.camera_center).item()
+    sample_radius = torch.norm(reference_camera.camera_center).item()
 
     all_centers, all_uvs = generate_circular_hemisphere_poses(torch.tensor([0, 0, 0], device=object_center.device), radius=sample_radius)
     circle_indices, middle_circle_indices, sector_map = divide_hemisphere_poses(all_centers, object_center.cpu().numpy())
