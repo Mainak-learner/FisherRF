@@ -214,7 +214,7 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
             os.makedirs(test_save_path, exist_ok=True)
             for idx, cam in enumerate(test_cams):
                 test_img = render(cam, gaussians, pipe, background)["render"].clamp(0, 1)
-                gt_img = cam.original_image.cuda().clamp(0, 1)
+                gt_img = render(cam, oracle_gaussians, pipe, background)["render"].clamp(0, 1)
                 psnr_total += psnr(test_img, gt_img).mean().item()
                 ssim_total += ssim(test_img, gt_img).mean().item()
                 lpips_total += lpips(test_img, gt_img).mean().item()
