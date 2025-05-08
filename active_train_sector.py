@@ -84,7 +84,7 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
 
     background = torch.tensor([1.0, 1.0, 1.0], dtype=torch.float32, device="cuda")
 
-    for iteration in tqdm(range(1, args.initial_train), desc="Initial Training on Middle Circle"):
+    for iteration in tqdm(range(1, args.initial_train + 1), desc="Initial Training on Middle Circle"):
         gaussians.update_learning_rate(iteration)
         viewpoint_cam = custom_cams[randint(0, len(custom_cams)-1)]
 
@@ -110,7 +110,7 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
                     gaussians.reset_opacity()
 
             # Optimizer step
-            if iteration < full_training_iters:
+            if iteration < args.initial_train:
                 gaussians.optimizer.step()
                 gaussians.optimizer.zero_grad(set_to_none = True)
     
