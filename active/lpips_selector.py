@@ -65,8 +65,8 @@ class LPIPSNBVSelector:
         u_max = max(u_vals)
         v_min = min(v_vals)
         v_max = max(v_vals)
-        r_min = sampled_radius - margin
-        r_max = sampled_radius + margin
+        r_min = sample_radius - margin
+        r_max = sample_radius + margin
 
         for _ in tqdm(range(steps), desc="Optimizing NBV"):
             optimizer.zero_grad()
