@@ -89,14 +89,30 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
         viewpoint_cam = custom_cams[randint(0, len(custom_cams)-1)]
 
         render_pkg = render(viewpoint_cam, gaussians, pipe, background)
-        image = render_pkg["render"]
+        image, viewspace_point_tensor, visibility_filter, radii = render_pkg["render"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]
 
         gt_image = viewpoint_cam.original_image.cuda()
         Ll1 = l1_loss(image, gt_image)
         loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image))
         loss.backward()
-        gaussians.optimizer.step()
-        gaussians.optimizer.zero_grad(set_to_none=True)
+        with torch.no_grad():
+            # Densification
+            if iteration < opt.densify_until_iter:
+                # Keep track of max radii in image-space for pruning
+                gaussians.max_radii2D[visibility_filter] = torch.max(gaussians.max_radii2D[visibility_filter], radii[visibility_filter])
+                gaussians.add_densification_stats(viewspace_point_tensor, visibility_filter)
+
+                if iteration > opt.densify_from_iter and iteration % opt.densification_interval == 0:
+                    size_threshold = 20 if iteration > opt.opacity_reset_interval else None
+                    gaussians.densify_and_prune(opt.densify_grad_threshold, 0.005, scene.cameras_extent, size_threshold)
+                
+                if iteration % opt.opacity_reset_interval == 0 or (dataset.white_background and iteration == opt.densify_from_iter):
+                    gaussians.reset_opacity()
+
+            # Optimizer step
+            if iteration < full_training_iters:
+                gaussians.optimizer.step()
+                gaussians.optimizer.zero_grad(set_to_none = True)
     
     lpips = lpips_func("cuda", net_type='vgg')
     psnr_total, ssim_total, lpips_total = 0.0, 0.0, 0.0
