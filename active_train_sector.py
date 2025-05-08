@@ -150,7 +150,7 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
         sector_ref_imgs = []
         for idx in sector_indices:
             cam_center = all_centers[idx]
-            img = render_fn(cam_center, object_center, pipe, gaussians, background, reference_camera)
+            img = render_with_oracle(cam_center, object_center, pipe, gaussians, background, reference_camera)
             sector_ref_imgs.append(img)
 
         u_opt, v_opt, r_opt = selector.optimize_pose(
