@@ -160,7 +160,6 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
 
     total_iterations = args.iterations
     full_training_iters = total_iterations
-
     for iteration in tqdm(range(1, full_training_iters + 1), desc="Full Training Loop"):
         current_iter = iteration
         gaussians.update_learning_rate(current_iter)
@@ -179,12 +178,16 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
         if current_iter in test_iterations:
             test_cams = scene.getAllCameras(1.0)
             psnr_total, ssim_total, lpips_total = 0.0, 0.0, 0.0
+            test_save_path = f"test_inspection/iter_{current_iter}"
+            os.makedirs(save_path, exist_ok=True)
             for cam in test_cams:
                 test_img = render(cam, gaussians, pipe, background)["render"].clamp(0, 1)
                 gt_img = cam.original_image.cuda().clamp(0, 1)
                 psnr_total += psnr(test_img, gt_img).mean().item()
                 ssim_total += ssim(test_img, gt_img).mean().item()
-                lpips_total += lpips_metric(test_img, gt_img).mean().item()
+                lpips_total += lpips(test_img, gt_img).mean().item()
+                save_image(rendered.cpu(), os.path.join(save_path, f"render_{idx}.png"))
+                save_image(gt_img.cpu(), os.path.join(save_path, f"gt_{idx}.png"))
             num = len(test_cams)
             print(f"[ITER {current_iter}] PSNR {psnr_total/num:.2f} SSIM {ssim_total/num:.4f} LPIPS {lpips_total/num:.4f}")
 
@@ -201,7 +204,6 @@ def training_report(tb_writer, iteration, Ll1, loss, l1_loss_fn, elapsed, test_i
     if iteration in test_iterations:
         print(f"Running evaluation for iteration: {iteration}")
         torch.cuda.empty_cache()
-        lpips = lpips_func("cuda", net_type='vgg')
         cams = scene.getAllCameras()
         l1_test, psnr_test, ssim_test, lpips_test = 0.0, 0.0, 0.0, 0.0
 
@@ -231,7 +233,7 @@ if __name__ == "__main__":
     op = OptimizationParams(parser)
     pp = PipelineParams(parser)
     parser.add_argument("--initial_train", type=int, default=5000, help="Iterations for initial training")
-    parser.add_argument("--test_iterations", nargs="+", type=int, default=[15000, 20000, 25000, 30000])
+    parser.add_argument("--test_iterations", nargs="+", type=int, default=[5000, 10000, 15000, 20000, 25000, 30000])
     parser.add_argument("--save_iterations", nargs="+", type=int, default=[7000, 30000])
     parser.add_argument("--oracle_model_path", type=str, required=True, help="Path to pretrained 3DGS model for oracle rendering")
     args = parser.parse_args()
