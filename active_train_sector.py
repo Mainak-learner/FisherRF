@@ -73,7 +73,7 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
     for i,idx in enumerate(middle_ids):
         cam_center = all_centers[idx]
         gt_img = render_with_oracle(cam_center, object_center, pipe, oracle_gaussians, torch.tensor([1.0, 1.0, 1.0], device="cuda"), reference_camera)
-        img_path = f"oracle_middle_gt/pose_{i}.png"
+        img_path = f"oracle_gt_visualization/pose_{i}.png"
         TF.to_pil_image(gt_img.clamp(0, 1).cpu()).save(img_path)
 
         # Encode to base64
