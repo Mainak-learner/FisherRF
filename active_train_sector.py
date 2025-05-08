@@ -63,7 +63,7 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
     middle_ids = np.random.choice(middle_circle_indices, size=6, replace=False)
     custom_cams = []
 
-    np.save("all_centers.npy", all_centers.cpu().numpy())
+    os.makedirs("oracle_gt_visualization", exist_ok=True)
     np.save("oracle_gt_visualization/object_center.npy", object_center.cpu().numpy())
     np.save("oracle_gt_visualization/object_points.npy", oracle_gaussians.get_xyz.detach().cpu().numpy())
     np.save("oracle_gt_visualization/object_colors.npy", oracle_gaussians._features_dc.detach().cpu().numpy())
