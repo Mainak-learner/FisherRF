@@ -186,7 +186,7 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
                 psnr_total += psnr(test_img, gt_img).mean().item()
                 ssim_total += ssim(test_img, gt_img).mean().item()
                 lpips_total += lpips(test_img, gt_img).mean().item()
-                save_image(rendered.cpu(), os.path.join(test_save_path, f"render_{idx}.png"))
+                save_image(test_img.cpu(), os.path.join(test_save_path, f"render_{idx}.png"))
                 save_image(gt_img.cpu(), os.path.join(test_save_path, f"gt_{idx}.png"))
             num = len(test_cams)
             print(f"[ITER {current_iter}] PSNR {psnr_total/num:.2f} SSIM {ssim_total/num:.4f} LPIPS {lpips_total/num:.4f}")
