@@ -179,15 +179,15 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
             test_cams = scene.getAllCameras(1.0)
             psnr_total, ssim_total, lpips_total = 0.0, 0.0, 0.0
             test_save_path = f"test_inspection/iter_{current_iter}"
-            os.makedirs(save_path, exist_ok=True)
+            os.makedirs(test_save_path, exist_ok=True)
             for cam in test_cams:
                 test_img = render(cam, gaussians, pipe, background)["render"].clamp(0, 1)
                 gt_img = cam.original_image.cuda().clamp(0, 1)
                 psnr_total += psnr(test_img, gt_img).mean().item()
                 ssim_total += ssim(test_img, gt_img).mean().item()
                 lpips_total += lpips(test_img, gt_img).mean().item()
-                save_image(rendered.cpu(), os.path.join(save_path, f"render_{idx}.png"))
-                save_image(gt_img.cpu(), os.path.join(save_path, f"gt_{idx}.png"))
+                save_image(rendered.cpu(), os.path.join(test_save_path, f"render_{idx}.png"))
+                save_image(gt_img.cpu(), os.path.join(test_save_path, f"gt_{idx}.png"))
             num = len(test_cams)
             print(f"[ITER {current_iter}] PSNR {psnr_total/num:.2f} SSIM {ssim_total/num:.4f} LPIPS {lpips_total/num:.4f}")
 
