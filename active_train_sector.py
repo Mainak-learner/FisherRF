@@ -147,12 +147,12 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
 
         dummy_camera = DummyCamera(*look_at(new_cam_center.detach(), object_center.detach()), reference_camera, image=oracle_img.detach())
         custom_cams.append(dummy_camera)
-        img_path = f"oracle_gt_visualization/gt_{len(custom_cams)-1}.png"
+        img_path = f"oracle_gt_visualization/pose_{len(custom_cams)-1}.png"
         TF.to_pil_image(oracle_img.clamp(0, 1).cpu()).save(img_path)
     
     print(f"Selected 18 training views. Final phase of training begins now...")
 
-    filenames = [f"oracle_gt_visualization/gt_{i}.png" for i in range(len(custom_cams))]
+    filenames = [f"oracle_gt_visualization/pose_{i}.png" for i in range(len(custom_cams))]
     with open("oracle_gt_visualization/image_filenames.json", "w") as f:
         json.dump([os.path.basename(p) for p in filenames], f)
     pose_centers = torch.stack([cam.camera_center for cam in custom_cams], dim=0).cpu().numpy()
