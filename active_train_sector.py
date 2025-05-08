@@ -82,10 +82,6 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
         selected_middle_centers.append(cam_center.cpu().numpy().tolist())
         custom_cams.append(dummy_camera)
 
-    with open("oracle_middle_gt/pose_centers.json", "w") as f:
-        json.dump(selected_middle_centers, f)
-    with open("oracle_middle_gt/image_filenames.json", "w") as f:
-        json.dump(oracle_image_paths, f)
     background = torch.tensor([1.0, 1.0, 1.0], dtype=torch.float32, device="cuda")
 
     for iteration in tqdm(range(1, args.initial_train), desc="Initial Training on Middle Circle"):
@@ -119,6 +115,7 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
     
     N = len(custom_cams)
     print(f"[Middle Circle] PSNR: {psnr_total/N:.2f}, SSIM: {ssim_total/N:.4f}, LPIPS: {lpips_total/N:.4f}")
+    selector = LPIPSNBVSelector()
 
     for sector_id, sector_indices in sector_map.items():
         if len(sector_indices) == 0:
@@ -147,11 +144,19 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
         )
         new_cam_center = uv2car_torch(torch.tensor([u_opt], device=object_center.device), torch.tensor([v_opt], device=object_center.device)) * r_opt + object_center
         oracle_img = render_with_oracle(new_cam_center, object_center, pipe, oracle_gaussians, background, reference_camera)
+        img_path = f"oracle_gt_visualization/gt_{i}.png"
+        TF.to_pil_image(oracle_img.clamp(0, 1).cpu()).save(img_path)
 
         dummy_camera = DummyCamera(*look_at(new_cam_center.detach(), object_center.detach()), reference_camera, image=oracle_img.detach())
         custom_cams.append(dummy_camera)
     
     print(f"Selected 18 training views. Final phase of training begins now...")
+
+    filenames = [f"oracle_gt_visualization/gt_{i}.png" for i in range(len(custom_cams))]
+    with open("oracle_gt_visualization/image_filenames.json", "w") as f:
+        json.dump([os.path.basename(p) for p in filenames], f)
+    pose_centers = torch.stack([cam.camera_center for cam in custom_cams], dim=0).cpu().numpy()
+    np.save("oracle_gt_visualization/pose_centers.npy", pose_centers)
 
     total_iterations = args.iterations
     full_training_iters = total_iterations
