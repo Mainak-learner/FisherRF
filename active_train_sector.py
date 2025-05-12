@@ -22,6 +22,7 @@ from torchvision.utils import save_image
 import base64
 import json
 from PIL import Image
+from active.gp_fisher_selector import GPFisherNBVSelector
 import torchvision.transforms.functional as TF
 from arguments import ModelParams, PipelineParams, OptimizationParams
 
@@ -57,8 +58,8 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
     reference_camera = scene.getAllCameras()[0]
     sample_radius = torch.norm(reference_camera.camera_center).item()
 
-    all_centers, all_uvs = generate_circular_hemisphere_poses(torch.tensor([0, 0, 0], device=object_center.device), radius=sample_radius)
-    circle_indices, middle_circle_indices, sector_map = divide_hemisphere_poses(all_centers, object_center.cpu().numpy())
+    all_centers, all_uvs, pose_per_circle = generate_circular_hemisphere_poses(torch.tensor([0, 0, 0], device=object_center.device), radius=sample_radius)
+    circle_indices, middle_circle_indices, sector_map = divide_hemisphere_poses(all_centers, object_center.cpu().numpy(), pose_per_circle)
 
     middle_ids = np.random.choice(middle_circle_indices, size=6, replace=False)
     custom_cams = []
@@ -131,43 +132,71 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
     
     N = len(custom_cams)
     print(f"[Middle Circle] PSNR: {psnr_total/N:.2f}, SSIM: {ssim_total/N:.4f}, LPIPS: {lpips_total/N:.4f}")
-    selector = LPIPSNBVSelector()
+    selector = GPFisherNBVSelector(device="cuda")
+
+    uncertainties = selector.compute_uncertainty_trace(
+        all_centers, object_center, gaussians, pipe, background, reference_camera
+    )
 
     for sector_id, sector_indices in sector_map.items():
         if len(sector_indices) == 0:
             continue
 
-        sector_centers = all_centers[sector_indices]
-        mean_center = sector_centers.mean(0)
-        dir_vec = mean_center
-        radius = torch.norm(dir_vec).item()
-        dir_vec /= radius
+        # sector_centers = all_centers[sector_indices]
+        # mean_center = sector_centers.mean(0)
+        # dir_vec = mean_center
+        # radius = torch.norm(dir_vec).item()
+        # dir_vec /= radius
 
-        u = (np.arctan2(dir_vec[1].item(), dir_vec[0].item()) / (2 * np.pi)) % 1.0
-        v = np.arccos(dir_vec[2].item()) / np.pi
-        init_pose = (u, v, radius)
+        # u = (np.arctan2(dir_vec[1].item(), dir_vec[0].item()) / (2 * np.pi)) % 1.0
+        # v = np.arccos(dir_vec[2].item()) / np.pi
+        # init_pose = (u, v, radius)
 
-        sector_ref_imgs = []
-        for idx in sector_indices:
-            cam_center = all_centers[idx]
-            img = render_with_oracle(cam_center, object_center, pipe, gaussians, background, reference_camera)
-            sector_ref_imgs.append(img)
+        # Get proposal UVs and centers for this sector
+        proposal_uvs = [all_uvs[idx] for idx in sector_indices]
+        proposal_centers = all_centers[sector_indices]
 
-        u_opt, v_opt, r_opt = selector.optimize_pose(
-            init_pose,
-            lambda cam: render_fn(cam, object_center, pipe, gaussians, background, reference_camera, debug=True),
-            sector_ref_imgs,
-            sector_indices,
-            all_uvs, 
-            sample_radius
+        # Compute Fisher-trace based uncertainty at proposal poses
+        uncertainties = gp_selector.compute_uncertainty_trace(
+            proposal_centers, object_center, gaussians, pipe, background, reference_camera
         )
-        new_cam_center = uv2car_torch(torch.tensor([u_opt], device=object_center.device), torch.tensor([v_opt], device=object_center.device)) * r_opt
-        oracle_img = render_with_oracle(new_cam_center, object_center, pipe, oracle_gaussians, background, reference_camera)
 
-        dummy_camera = DummyCamera(*look_at(new_cam_center.detach(), object_center.detach()), reference_camera, image=oracle_img.detach())
+        # sector_ref_imgs = []
+        # for idx in sector_indices:
+        #     cam_center = all_centers[idx]
+        #     img = render_with_oracle(cam_center, object_center, pipe, gaussians, background, reference_camera)
+        #     sector_ref_imgs.append(img)
+
+        # u_opt, v_opt, r_opt = selector.optimize_pose(
+        #     init_pose,
+        #     lambda cam: render_fn(cam, object_center, pipe, gaussians, background, reference_camera, debug=True),
+        #     sector_ref_imgs,
+        #     sector_indices,
+        #     all_uvs, 
+        #     sample_radius
+        # )
+        # new_cam_center = uv2car_torch(torch.tensor([u_opt], device=object_center.device), torch.tensor([v_opt], device=object_center.device)) * r_opt
+        # oracle_img = render_with_oracle(new_cam_center, object_center, pipe, oracle_gaussians, background, reference_camera)
+
+        # Fit GP on proposal UVs and predict over full hemisphere
+        next_center, (u_opt, v_opt) = selector.optimize(
+            proposal_uvs, proposal_centers, uncertainties,
+            all_uvs, all_centers
+        )
+        r_opt = sample_radius
+
+        # Create DummyCamera for selected pose
+        oracle_img = render_with_oracle(next_center, object_center, pipe, oracle_gaussians, background, reference_camera)
+        dummy_camera = DummyCamera(*look_at(next_center.detach(), object_center.detach()), reference_camera, image=oracle_img.detach())
+
         custom_cams.append(dummy_camera)
         img_path = f"oracle_gt_visualization/pose_{len(custom_cams)-1}.png"
         TF.to_pil_image(oracle_img.clamp(0, 1).cpu()).save(img_path)
+
+        # dummy_camera = DummyCamera(*look_at(new_cam_center.detach(), object_center.detach()), reference_camera, image=oracle_img.detach())
+        # custom_cams.append(dummy_camera)
+        # img_path = f"oracle_gt_visualization/pose_{len(custom_cams)-1}.png"
+        # TF.to_pil_image(oracle_img.clamp(0, 1).cpu()).save(img_path)
     
     print(f"Selected 18 training views. Final phase of training begins now...")
 

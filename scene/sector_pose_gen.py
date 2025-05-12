@@ -24,7 +24,7 @@ def generate_circular_hemisphere_poses(center, num_circles=5, min_poses=60, radi
             all_uvs.append((azimuth / (2*np.pi), elevation / np.pi))
     return torch.stack(all_poses), all_uvs, pose_per_circle
 
-def divide_hemisphere_poses(poses_xyz, center, num_poses_per_circle, num_circles=5):
+def divide_hemisphere_poses(poses_xyz, center, poses_per_circle, num_circles=5):
     """
     Divide camera poses into middle circle and 12 upper/lower sectors (6 each).
     """
@@ -47,12 +47,12 @@ def divide_hemisphere_poses(poses_xyz, center, num_poses_per_circle, num_circles
     pose_idx = 0
 
     for i in range(num_circles):
-        for j in range(num_poses_per_circle[i]):
+        for j in range(poses_per_circle[i]):
             if i == middle_ring:
                 middle_circle_indices.append(pose_idx)
                 continue
 
-            sector_label = f"{'upper' if i < middle_ring else 'lower'}_{(j * 6) // num_poses_per_circle}"
+            sector_label = f"{'upper' if i < middle_ring else 'lower'}_{(j * 6) // poses_per_circle[i]}"
             if sector_label not in sector_map:
                 sector_map[sector_label] = []
             if len(sector_map[sector_label]) < 10:
