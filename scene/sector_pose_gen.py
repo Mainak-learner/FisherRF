@@ -1,31 +1,34 @@
 import numpy as np
 import torch
 
-def generate_circular_hemisphere_poses(center, num_circles=5, num_poses_per_circle=30, radius=1.5):
+def generate_circular_hemisphere_poses(center, num_circles=5, min_poses=60, radius=1.5):
     """
-    Generate 150 poses on a hemisphere (5 circles × 30 poses each)
+    Generate poses on a hemisphere.
     """
+    assert min_poses % 6 == 0, "Min Poses must be divisible my 6"
     all_poses = []
     all_uvs = []
+    pose_per_circle = []
     for i in range(num_circles):
         # Elevation angle (v): 0 = pole (top), pi/2 = equator (middle)
         elevation = np.pi / 2 * (i + 1) / (num_circles + 1)
-        for j in range(num_poses_per_circle):
-            azimuth = 2 * np.pi * j / num_poses_per_circle
+        pose_this_circle = int(min_poses * num_circles / (i + 1))
+        pose_per_circle.append(pose_this_circle)
+        for j in range(pose_this_circle):
+            azimuth = 2 * np.pi * j / pose_this_circle
             x = radius * np.sin(elevation) * np.cos(azimuth)
             y = radius * np.sin(elevation) * np.sin(azimuth)
             z = radius * np.cos(elevation)
             cam_center = torch.tensor([x, y, z], dtype=torch.float32, device=center.device) + center
             all_poses.append(cam_center)
             all_uvs.append((azimuth / (2*np.pi), elevation / np.pi))
-    return torch.stack(all_poses), all_uvs
+    return torch.stack(all_poses), all_uvs, pose_per_circle
 
-def divide_hemisphere_poses(poses_xyz, center, num_circles=5, num_poses_per_circle=30):
+def divide_hemisphere_poses(poses_xyz, center, num_poses_per_circle, num_circles=5):
     """
-    Divide 150 camera poses into middle circle and 12 upper/lower sectors (6 each).
-    Assumes poses are uniformly sampled across 5 elevation rings with 30 azimuthal angles each.
+    Divide camera poses into middle circle and 12 upper/lower sectors (6 each).
     """
-    assert poses_xyz.shape[0] == num_circles * num_poses_per_circle, "Expected 150 poses"
+    # assert poses_xyz.shape[0] == num_circles * num_poses_per_circle, "Expected 150 poses"
 
     # Directions from object center
     poses_np = poses_xyz.detach().cpu().numpy()  # <-- NEW
@@ -41,22 +44,21 @@ def divide_hemisphere_poses(poses_xyz, center, num_circles=5, num_poses_per_circ
     circle_indices = {}
     middle_circle_indices = []
     sector_map = {}
+    pose_idx = 0
 
     for i in range(num_circles):
-        for j in range(num_poses_per_circle):
-            idx = i * num_poses_per_circle + j
+        for j in range(num_poses_per_circle[i]):
             if i == middle_ring:
-                middle_circle_indices.append(idx)
+                middle_circle_indices.append(pose_idx)
                 continue
 
             sector_label = f"{'upper' if i < middle_ring else 'lower'}_{(j * 6) // num_poses_per_circle}"
             if sector_label not in sector_map:
                 sector_map[sector_label] = []
             if len(sector_map[sector_label]) < 10:
-                sector_map[sector_label].append(idx)
+                sector_map[sector_label].append(pose_idx)
+            circle_indices[f"elev_{i}"].append(pose_idx)
+            pose_idx += 1
 
-    # Create elevation groupings for completeness
-    for i in range(num_circles):
-        circle_indices[f"elev_{i}"] = [i * num_poses_per_circle + j for j in range(num_poses_per_circle)]
 
     return circle_indices, middle_circle_indices, sector_map
