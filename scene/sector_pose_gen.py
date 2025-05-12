@@ -12,10 +12,10 @@ def generate_circular_hemisphere_poses(center, num_circles=5, min_poses=60, radi
     for i in range(num_circles):
         # Elevation angle (v): 0 = pole (top), pi/2 = equator (middle)
         elevation = np.pi / 2 * (i + 1) / (num_circles + 1)
-        pose_this_circle = int(min_poses * i)
-        pose_per_circle.append(pose_this_circle)
-        for j in range(pose_this_circle):
-            azimuth = 2 * np.pi * j / pose_this_circle
+        num_poses = int(min_poses * i)
+        pose_per_circle.append(num_poses)
+        for j in range(num_poses):
+            azimuth = 2 * np.pi * j / num_poses
             x = radius * np.sin(elevation) * np.cos(azimuth)
             y = radius * np.sin(elevation) * np.sin(azimuth)
             z = radius * np.cos(elevation)
