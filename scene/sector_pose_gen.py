@@ -47,6 +47,7 @@ def divide_hemisphere_poses(poses_xyz, center, poses_per_circle, num_circles=5):
     pose_idx = 0
 
     for i in range(num_circles):
+        circle_indices[f"elev_{i}"] = []
         for j in range(poses_per_circle[i]):
             if i == middle_ring:
                 middle_circle_indices.append(pose_idx)
