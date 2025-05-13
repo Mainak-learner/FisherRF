@@ -112,7 +112,7 @@ class GPFisherNBVSelector(Module):
             optimizer.zero_grad()
             # Convert u,v to camera center
             cam_center = uv2car_torch(u, v).to(device) * radius  # (1, 3)
-            K_s = self.rbf_kernel(X_train, cam_center)  # shape (N, 1)
+            K_s = torch.tensor(self.rbf_kernel(X_train, cam_center))  # shape (N, 1)
             mu = K_s.T @ K_inv @ y_train  # scalar
             loss = -mu  # maximize mu
             loss.backward()
