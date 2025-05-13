@@ -94,7 +94,7 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
 
         if not viewpoint_stack:
             viewpoint_stack = selected_cams.copy()
-        viewpoint_cam = viewpoint_stack.pop(randint(0, len(selected_cams)-1))
+        viewpoint_cam = viewpoint_stack.pop(randint(0, len(viewpoint_stack)-1))
 
         render_pkg = render(viewpoint_cam, gaussians, pipe, background)
         image, viewspace_point_tensor, visibility_filter, radii = render_pkg["render"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]
