@@ -62,7 +62,7 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
     circle_indices, middle_circle_indices, sector_map = divide_hemisphere_poses(all_centers, object_center.cpu().numpy(), pose_per_circle)
 
     middle_ids = np.random.choice(middle_circle_indices, size=6, replace=False)
-    custom_cams = []
+    selected_cams = []
 
     os.makedirs("oracle_gt_visualization", exist_ok=True)
     np.save("oracle_gt_visualization/object_center.npy", object_center.cpu().numpy())
@@ -81,13 +81,20 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
         oracle_image_paths.append(f"pose_{i}.png")
         dummy_camera = DummyCamera(*look_at(cam_center.detach(), object_center.detach()), reference_camera, image=gt_img.detach())
         selected_middle_centers.append(cam_center.cpu().numpy().tolist())
-        custom_cams.append(dummy_camera)
+        selected_cams.append(dummy_camera)
 
     background = torch.tensor([1.0, 1.0, 1.0], dtype=torch.float32, device="cuda")
 
+    viewpoint_stack=None 
     for iteration in tqdm(range(1, args.initial_train + 1), desc="Initial Training on Middle Circle"):
         gaussians.update_learning_rate(iteration)
-        viewpoint_cam = custom_cams[randint(0, len(custom_cams)-1)]
+
+        if iteration % 1000 == 0:
+            gaussians.oneupSHdegree()
+
+        if not viewpoint_stack:
+            viewpoint_stack = selected_cams.copy()
+        viewpoint_cam = viewpoint_stack.pop(randint(0, len(selected_cams)-1))
 
         render_pkg = render(viewpoint_cam, gaussians, pipe, background)
         image, viewspace_point_tensor, visibility_filter, radii = render_pkg["render"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]
@@ -118,7 +125,7 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
     lpips = lpips_func("cuda", net_type='vgg')
     psnr_total, ssim_total, lpips_total = 0.0, 0.0, 0.0
     os.makedirs("middle_render_vs_gt", exist_ok=True)
-    for idx, cam in enumerate(custom_cams):
+    for idx, cam in enumerate(selected_cams):
         rendered = render(cam, gaussians, pipe, background)["render"].clamp(0, 1)
         gt_image = cam.original_image.clamp(0, 1).to(rendered.device)  # ensure both are on the same device
 
@@ -130,36 +137,40 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
         save_image(rendered.cpu(), f"middle_render_vs_gt/render_{idx}.png")
         save_image(gt_image.cpu(), f"middle_render_vs_gt/gt_{idx}.png")
     
-    N = len(custom_cams)
+    N = len(selected_cams)
     print(f"[Middle Circle] PSNR: {psnr_total/N:.2f}, SSIM: {ssim_total/N:.4f}, LPIPS: {lpips_total/N:.4f}")
     selector = GPFisherNBVSelector(device="cuda")
-
-    uncertainties = selector.compute_uncertainty_trace(
-        all_centers, object_center, gaussians, pipe, background, reference_camera
-    )
 
     for sector_id, sector_indices in sector_map.items():
         if len(sector_indices) == 0:
             continue
+        
+        sector_centers = all_centers[sector_indices]
+        mean_center = sector_centers.mean(0)
+        dir_vec = mean_center
+        radius = torch.norm(dir_vec).item()
+        dir_vec /= radius
 
-        # sector_centers = all_centers[sector_indices]
-        # mean_center = sector_centers.mean(0)
-        # dir_vec = mean_center
-        # radius = torch.norm(dir_vec).item()
-        # dir_vec /= radius
-
-        # u = (np.arctan2(dir_vec[1].item(), dir_vec[0].item()) / (2 * np.pi)) % 1.0
-        # v = np.arccos(dir_vec[2].item()) / np.pi
-        # init_pose = (u, v, radius)
+        u = (np.arctan2(dir_vec[1].item(), dir_vec[0].item()) / (2 * np.pi)) % 1.0
+        v = np.arccos(dir_vec[2].item()) / np.pi
+        init_pose = (u, v, radius)
 
         # Get proposal UVs and centers for this sector
         proposal_uvs = [all_uvs[idx] for idx in sector_indices]
         proposal_centers = all_centers[sector_indices]
 
+        u_vals = [uv[0] for uv in proposal_uvs]
+        v_vals = [uv[1] for uv in proposal_uvs]
+
+        margin = 0.01
+        u_bounds = (min(u_vals), max(u_vals))
+        v_bounds = (min(v_vals), max(v_vals))
+
+        gt_images = [render_with_oracle(cam_center, object_center, pipe, oracle_gaussians, torch.tensor([1.0, 1.0, 1.0], device="cuda"), reference_camera) for cam_center in proposal_centers]
+        candidate_cams = [DummyCamera(*look_at(cam_center.detach(), object_center.detach()), reference_camera, image=gt_img.detach()) for cam_center, gt_img in zip(proposal_centers, gt_images)]
+
         # Compute Fisher-trace based uncertainty at proposal poses
-        uncertainties = gp_selector.compute_uncertainty_trace(
-            proposal_centers, object_center, gaussians, pipe, background, reference_camera
-        )
+        uncertainties = selector.compute_fisher_uncertainty(gaussians, selected_cams, candidate_cams, pipe, background)
 
         # sector_ref_imgs = []
         # for idx in sector_indices:
@@ -179,31 +190,34 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
         # oracle_img = render_with_oracle(new_cam_center, object_center, pipe, oracle_gaussians, background, reference_camera)
 
         # Fit GP on proposal UVs and predict over full hemisphere
-        next_center, (u_opt, v_opt) = selector.optimize(
-            proposal_uvs, proposal_centers, uncertainties,
-            all_uvs, all_centers
+        center_opt, uv_opt = selector.optimize_gp_posterior(
+            proposal_uvs=[all_uvs[i] for i in sector_indices],
+            proposal_centers=[all_centers[i].cpu().numpy() for i in sector_indices],
+            uncertainties=uncertainties,  # should be tensor
+            init_uv=init_pose[:2],
+            uv_bounds=(u_bounds, v_bounds),
+            radius=sample_radius,
+            steps=100
         )
-        r_opt = sample_radius
-
         # Create DummyCamera for selected pose
-        oracle_img = render_with_oracle(next_center, object_center, pipe, oracle_gaussians, background, reference_camera)
-        dummy_camera = DummyCamera(*look_at(next_center.detach(), object_center.detach()), reference_camera, image=oracle_img.detach())
+        oracle_img = render_with_oracle(center_opt, object_center, pipe, oracle_gaussians, background, reference_camera)
+        dummy_camera = DummyCamera(*look_at(center_opt.detach(), object_center.detach()), reference_camera, image=oracle_img.detach())
 
-        custom_cams.append(dummy_camera)
-        img_path = f"oracle_gt_visualization/pose_{len(custom_cams)-1}.png"
+        selected_cams.append(dummy_camera)
+        img_path = f"oracle_gt_visualization/pose_{len(selected_cams)-1}.png"
         TF.to_pil_image(oracle_img.clamp(0, 1).cpu()).save(img_path)
 
         # dummy_camera = DummyCamera(*look_at(new_cam_center.detach(), object_center.detach()), reference_camera, image=oracle_img.detach())
-        # custom_cams.append(dummy_camera)
-        # img_path = f"oracle_gt_visualization/pose_{len(custom_cams)-1}.png"
+        # selected_cams.append(dummy_camera)
+        # img_path = f"oracle_gt_visualization/pose_{len(selected_cams)-1}.png"
         # TF.to_pil_image(oracle_img.clamp(0, 1).cpu()).save(img_path)
     
     print(f"Selected 18 training views. Final phase of training begins now...")
 
-    filenames = [f"oracle_gt_visualization/pose_{i}.png" for i in range(len(custom_cams))]
+    filenames = [f"oracle_gt_visualization/pose_{i}.png" for i in range(len(selected_cams))]
     with open("oracle_gt_visualization/image_filenames.json", "w") as f:
         json.dump([os.path.basename(p) for p in filenames], f)
-    pose_centers = torch.stack([cam.camera_center for cam in custom_cams], dim=0).cpu().numpy()
+    pose_centers = torch.stack([cam.camera_center for cam in selected_cams], dim=0).cpu().numpy()
     np.save("oracle_gt_visualization/pose_centers.npy", pose_centers)
 
     total_iterations = args.iterations
@@ -211,7 +225,7 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
     for iteration in tqdm(range(1, full_training_iters + 1), desc="Full Training Loop"):
         current_iter = iteration
         gaussians.update_learning_rate(current_iter)
-        viewpoint_cam = custom_cams[randint(0, len(custom_cams)-1)]
+        viewpoint_cam = selected_cams[randint(0, len(selected_cams)-1)]
 
         render_pkg = render(viewpoint_cam, gaussians, pipe, background)
         image, viewspace_point_tensor, visibility_filter, radii = render_pkg["render"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]
