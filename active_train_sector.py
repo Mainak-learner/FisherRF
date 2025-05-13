@@ -139,7 +139,7 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
     
     N = len(selected_cams)
     print(f"[Middle Circle] PSNR: {psnr_total/N:.2f}, SSIM: {ssim_total/N:.4f}, LPIPS: {lpips_total/N:.4f}")
-    selector = GPFisherNBVSelector(device="cuda")
+    selector = GPFisherNBVSelector(args, device="cuda")
 
     for sector_id, sector_indices in sector_map.items():
         if len(sector_indices) == 0:
