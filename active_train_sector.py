@@ -140,7 +140,7 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
     N = len(selected_cams)
     print(f"[Middle Circle] PSNR: {psnr_total/N:.2f}, SSIM: {ssim_total/N:.4f}, LPIPS: {lpips_total/N:.4f}")
     selector = GPFisherNBVSelector(args, device="cuda")
-
+    sector_selections = []
     for sector_id, sector_indices in sector_map.items():
         if len(sector_indices) == 0:
             continue
@@ -202,7 +202,7 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
         oracle_img = render_with_oracle(center_opt, object_center, pipe, oracle_gaussians, background, reference_camera)
         dummy_camera = DummyCamera(*look_at(center_opt.detach(), object_center.detach()), reference_camera, image=oracle_img.detach())
 
-        selected_cams.append(dummy_camera)
+        sector_selections.append(dummy_camera)
         img_path = f"oracle_gt_visualization/pose_{len(selected_cams)-1}.png"
         TF.to_pil_image(oracle_img.clamp(0, 1).cpu()).save(img_path)
 
@@ -211,6 +211,7 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
         # img_path = f"oracle_gt_visualization/pose_{len(selected_cams)-1}.png"
         # TF.to_pil_image(oracle_img.clamp(0, 1).cpu()).save(img_path)
     
+    selected_cams = selected_cams + sector_selections
     print(f"Selected 18 training views. Final phase of training begins now...")
 
     filenames = [f"oracle_gt_visualization/pose_{i}.png" for i in range(len(selected_cams))]
