@@ -37,7 +37,7 @@ class GPFisherNBVSelector(Module):
         """
         params = gaussians.capture()[1:7]
         params = [p for i, p in enumerate(params) if i not in self.filter_out_idx]
-        device = params[0].device if num_views == 1 else "cpu"
+        device = params[0].device
 
         H_train = torch.zeros(sum(p.numel() for p in params), device=params[0].device, dtype=params[0].dtype)
 
