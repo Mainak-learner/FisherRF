@@ -26,7 +26,7 @@ class GPFisherNBVSelector(Module):
         self.filter_out_idx: List[str] = [name2idx[k] for k in args.filter_out_grad]
 
     def rbf_kernel(self, X1, X2):
-        dists = cdist(X1.cpu().numpy(), X2.cpu().numpy(), 'sqeuclidean')
+        dists = cdist(X1.detach().cpu().numpy(), X2.detach().cpu().numpy(), 'sqeuclidean')
         return self.sigma_f ** 2 * np.exp(-0.5 / self.l**2 * dists)
 
     def compute_fisher_uncertainty(self, gaussians, selected_cameras, candidate_cameras, pipe, background):
