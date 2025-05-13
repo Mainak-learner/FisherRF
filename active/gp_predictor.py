@@ -96,33 +96,39 @@ class GPFisherNBVSelector(Module):
         u_min, u_max = uv_bounds[0]
         v_min, v_max = uv_bounds[1]
 
+        # Optimize in uv-space
         u = torch.tensor([init_uv[0]], device=device, dtype=torch.float32, requires_grad=True)
         v = torch.tensor([init_uv[1]], device=device, dtype=torch.float32, requires_grad=True)
 
-        X_train = torch.tensor(proposal_centers, dtype=torch.float32, device=device)
-        y_train = uncertainties.detach()
-        K = self.rbf_kernel(X_train, X_train)
-        K += self.noise * np.eye(K.shape[0])
-        K_inv = torch.tensor(np.linalg.inv(K), device=device, dtype=torch.float32)
-        y_train = y_train.unsqueeze(1)
+        # Prepare training data
+        proposal_centers_np = np.array(proposal_centers)
+        X_train = torch.tensor(proposal_centers_np, dtype=torch.float32, device="cpu")  # RBF kernel runs on CPU
+        y_train = uncertainties.detach().cpu().unsqueeze(1)  # (N, 1), on CPU
+
+        # Kernel matrices
+        K = self.rbf_kernel(X_train, X_train) + self.noise * np.eye(len(X_train))  # (N, N), np.ndarray
+        K_inv = np.linalg.inv(K)
+        K_inv = torch.tensor(K_inv, dtype=torch.float32, device="cpu")
 
         optimizer = torch.optim.Adam([u, v], lr=lr)
 
         for _ in range(steps):
             optimizer.zero_grad()
-            # Convert u,v to camera center
-            cam_center = uv2car_torch(u, v).to(device) * radius  # (1, 3)
-            K_s = torch.tensor(self.rbf_kernel(X_train, cam_center))  # shape (N, 1)
-            mu = K_s.T @ K_inv @ y_train  # scalar
-            loss = -mu  # maximize mu
+
+            # Generate new cam center and evaluate kernel
+            cam_center = uv2car_torch(u, v).to("cpu") * radius  # (1, 3), on CPU
+            K_s = self.rbf_kernel(X_train, cam_center)  # (N, 1), np.ndarray
+            K_s = torch.tensor(K_s, dtype=torch.float32, device="cpu")
+
+            # Compute posterior mean (still on CPU)
+            mu = K_s.T @ K_inv @ y_train  # (1, 1)
+            loss = -mu  # maximize mean
             loss.backward()
             optimizer.step()
 
-            # Clamp to valid sector bounds
             u.data.clamp_(u_min, u_max)
             v.data.clamp_(v_min, v_max)
 
         final_uv = (u.item(), v.item())
-        final_center = uv2car_torch(u, v).squeeze(0).detach().cpu()
+        final_center = uv2car_torch(u.detach(), v.detach()).squeeze(0).to(device) * radius
         return final_center, final_uv
-
