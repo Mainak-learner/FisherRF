@@ -22,7 +22,7 @@ from torchvision.utils import save_image
 import base64
 import json
 from PIL import Image
-from active.gp_fisher_selector import GPFisherNBVSelector
+from active.gp_predictor import GPFisherNBVSelector
 import torchvision.transforms.functional as TF
 from arguments import ModelParams, PipelineParams, OptimizationParams
 
@@ -162,7 +162,6 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
         u_vals = [uv[0] for uv in proposal_uvs]
         v_vals = [uv[1] for uv in proposal_uvs]
 
-        margin = 0.01
         u_bounds = (min(u_vals), max(u_vals))
         v_bounds = (min(v_vals), max(v_vals))
 
