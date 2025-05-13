@@ -224,7 +224,13 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
     for iteration in tqdm(range(1, full_training_iters + 1), desc="Full Training Loop"):
         current_iter = iteration
         gaussians.update_learning_rate(current_iter)
-        viewpoint_cam = selected_cams[randint(0, len(selected_cams)-1)]
+
+        if current_iter % 1000 == 0:
+            gaussians.oneupSHdegree()
+
+        if not viewpoint_stack:
+            viewpoint_stack = selected_cams.copy()
+        viewpoint_cam = viewpoint_stack.pop(randint(0, len(viewpoint_stack)-1))
 
         render_pkg = render(viewpoint_cam, gaussians, pipe, background)
         image, viewspace_point_tensor, visibility_filter, radii = render_pkg["render"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]
