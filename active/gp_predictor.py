@@ -26,8 +26,18 @@ class GPFisherNBVSelector(Module):
         self.filter_out_idx: List[str] = [name2idx[k] for k in args.filter_out_grad]
 
     def rbf_kernel(self, X1, X2):
-        dists = cdist(X1.detach().cpu().numpy(), X2.detach().cpu().numpy(), 'sqeuclidean')
-        return self.sigma_f ** 2 * np.exp(-0.5 / self.l**2 * dists)
+        """
+        Computes the RBF (squared exponential) kernel matrix using PyTorch.
+        X1: (N, D) torch tensor
+        X2: (M, D) torch tensor
+        Returns: (N, M) torch tensor
+        """
+        # Compute squared Euclidean distance
+        X1_sq = (X1 ** 2).sum(dim=1, keepdim=True)  # (N, 1)
+        X2_sq = (X2 ** 2).sum(dim=1, keepdim=True)  # (M, 1)
+        dists = X1_sq - 2 * X1 @ X2.T + X2_sq.T     # (N, M)
+
+        return self.sigma_f ** 2 * torch.exp(-0.5 / self.l**2 * dists)
 
     def compute_fisher_uncertainty(self, gaussians, selected_cameras, candidate_cameras, pipe, background):
         """
@@ -117,7 +127,7 @@ class GPFisherNBVSelector(Module):
 
             # Generate new cam center and evaluate kernel
             cam_center = uv2car_torch(u, v).to("cpu") * radius  # (1, 3), on CPU
-            K_s = self.rbf_kernel(X_train, cam_center)  # (N, 1), np.ndarray
+            K_s = self.rbf_kernel(X_train, cam_center).to("cpu")  # (N, 1), np.ndarray
             K_s = torch.tensor(K_s, dtype=torch.float32, device="cpu")
 
             # Compute posterior mean (still on CPU)
