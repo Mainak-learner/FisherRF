@@ -111,28 +111,24 @@ class GPFisherNBVSelector(Module):
         v = torch.tensor([init_uv[1]], device=device, dtype=torch.float32, requires_grad=True)
 
         # Prepare training data
-        proposal_centers_np = np.array(proposal_centers)
-        X_train = torch.tensor(proposal_centers_np, dtype=torch.float32, device="cpu")  # RBF kernel runs on CPU
-        y_train = uncertainties.detach().cpu().unsqueeze(1)  # (N, 1), on CPU
+        X_train = torch.tensor(np.array(proposal_centers), dtype=torch.float32, device=device)  # (N, 3)
+        y_train = uncertainties.to(device).unsqueeze(1)  # (N, 1)
 
-        # Kernel matrices
-        K = self.rbf_kernel(X_train, X_train) + self.noise * np.eye(len(X_train))  # (N, N), np.ndarray
-        K_inv = np.linalg.inv(K)
-        K_inv = torch.tensor(K_inv, dtype=torch.float32, device="cpu")
+        # Compute kernel matrix K and its inverse (detached!)
+        with torch.no_grad():
+            K = self.rbf_kernel(X_train, X_train) + self.noise * torch.eye(X_train.size(0), device=device)
+            K_inv = torch.inverse(K)  # (N, N)
 
         optimizer = torch.optim.Adam([u, v], lr=lr)
 
         for _ in range(steps):
             optimizer.zero_grad()
 
-            # Generate new cam center and evaluate kernel
-            cam_center = uv2car_torch(u, v).to("cpu") * radius  # (1, 3), on CPU
-            K_s = self.rbf_kernel(X_train, cam_center).to("cpu")  # (N, 1), np.ndarray
-            K_s = torch.tensor(K_s, dtype=torch.float32, device="cpu")
+            cam_center = uv2car_torch(u, v) * radius  # (1, 3)
+            K_s = self.rbf_kernel(X_train, cam_center)  # (N, 1)
 
-            # Compute posterior mean (still on CPU)
-            mu = K_s.T @ K_inv @ y_train  # (1, 1)
-            loss = -mu  # maximize mean
+            mu = K_s.T @ K_inv @ y_train  # (1, 1), differentiable w.r.t. u and v
+            loss = -mu  # maximize posterior mean
             loss.backward()
             optimizer.step()
 
@@ -140,5 +136,5 @@ class GPFisherNBVSelector(Module):
             v.data.clamp_(v_min, v_max)
 
         final_uv = (u.item(), v.item())
-        final_center = uv2car_torch(u.detach(), v.detach()).squeeze(0).to(device) * radius
+        final_center = uv2car_torch(u.detach(), v.detach()).squeeze(0) * radius
         return final_center, final_uv
