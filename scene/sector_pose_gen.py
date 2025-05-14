@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 
-def generate_circular_hemisphere_poses(center, num_circles=9, min_poses=96, radius=1.5):
+def generate_circular_hemisphere_poses(center, num_circles=5, min_poses=30, radius=1.5):
     """
     Generate poses on a hemisphere.
     """
@@ -24,7 +24,7 @@ def generate_circular_hemisphere_poses(center, num_circles=9, min_poses=96, radi
             all_uvs.append((azimuth / (2*np.pi), elevation / np.pi))
     return torch.stack(all_poses), all_uvs, pose_per_circle
 
-def divide_hemisphere_poses(poses_xyz, center, poses_per_circle, num_circles=9):
+def divide_hemisphere_poses(poses_xyz, center, poses_per_circle, num_circles=5):
     """
     Divide camera poses into middle circle and 12 upper/lower sectors (6 each).
     """

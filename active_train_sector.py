@@ -202,7 +202,7 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
         dummy_camera = DummyCamera(*look_at(center_opt.detach(), object_center.detach()), reference_camera, image=oracle_img.detach())
 
         sector_selections.append(dummy_camera)
-        img_path = f"oracle_gt_visualization/pose_{len(selected_cams)-1}.png"
+        img_path = f"oracle_gt_visualization/pose_{len(sector_selections) + 6}.png"
         TF.to_pil_image(oracle_img.clamp(0, 1).cpu()).save(img_path)
 
         # dummy_camera = DummyCamera(*look_at(new_cam_center.detach(), object_center.detach()), reference_camera, image=oracle_img.detach())
