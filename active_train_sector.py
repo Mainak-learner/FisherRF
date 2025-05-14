@@ -165,7 +165,7 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
         u_bounds = (min(u_vals), max(u_vals))
         v_bounds = (min(v_vals), max(v_vals))
 
-        candidate_cams = [DummyCamera(*look_at(cam_center.detach(), object_center.detach()), reference_camera) for cam_center, gt_img in zip(proposal_centers, gt_images)]
+        candidate_cams = [DummyCamera(*look_at(cam_center.detach(), object_center.detach()), reference_camera) for cam_center in proposal_centers]
 
         # Compute Fisher-trace based uncertainty at proposal poses
         uncertainties = selector.compute_fisher_uncertainty(gaussians, selected_cams, candidate_cams, pipe, background)
