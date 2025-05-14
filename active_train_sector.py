@@ -217,8 +217,10 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
     filenames = [f"oracle_gt_visualization/pose_{i}.png" for i in range(len(selected_cams))]
     with open("oracle_gt_visualization/image_filenames.json", "w") as f:
         json.dump([os.path.basename(p) for p in filenames], f)
-    pose_centers = torch.stack([cam.camera_center for cam in selected_cams], dim=0).cpu().numpy()
-    np.save("oracle_gt_visualization/pose_centers.npy", pose_centers)
+    selected_pose_centers = torch.stack([cam.camera_center for cam in selected_cams], dim=0).cpu().numpy()
+    proposal_pose_centers = torch.stack([center for center in all_centers], dim=0).cpu().numpy()
+    np.save("oracle_gt_visualization/selected_pose_centers.npy", selected_pose_centers)
+    np.save("oracle_gt_visualization/proposal_pose_centers.npy", proposal_pose_centers)
 
     for iteration in tqdm(range(1, args.iterations + 1), desc="Full Training Loop"):
         gaussians.update_learning_rate(iteration)
