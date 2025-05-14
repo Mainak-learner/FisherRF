@@ -210,6 +210,7 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
         # img_path = f"oracle_gt_visualization/pose_{len(selected_cams)-1}.png"
         # TF.to_pil_image(oracle_img.clamp(0, 1).cpu()).save(img_path)
     
+    print(f"Sector selections: {len(sector_selections)}")
     selected_cams = selected_cams + sector_selections
     print(f"Selected 18 training views. Final phase of training begins now...")
 
