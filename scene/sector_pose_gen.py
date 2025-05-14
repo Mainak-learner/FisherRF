@@ -12,7 +12,7 @@ def generate_circular_hemisphere_poses(center, num_circles=5, min_poses=60, radi
     for i in range(num_circles):
         # Elevation angle (v): 0 = pole (top), pi/2 = equator (middle)
         elevation = np.pi / 2 * (i + 1) / (num_circles + 1)
-        num_poses = int(min_poses * i)
+        num_poses = int(min_poses * (i+1))
         pose_per_circle.append(num_poses)
         for j in range(num_poses):
             azimuth = 2 * np.pi * j / num_poses
@@ -40,7 +40,7 @@ def divide_hemisphere_poses(poses_xyz, center, poses_per_circle, num_circles=5):
     # elevation = torch.asin(directions[:, 2])  # [-pi/2, pi/2]
 
     # Sector definitions
-    middle_ring = 2  # third circle (index 2) is middle
+    middle_ring = num_circles//2  # third circle (index 2) is middle
     circle_indices = {}
     middle_circle_indices = []
     sector_map = {}
@@ -56,8 +56,8 @@ def divide_hemisphere_poses(poses_xyz, center, poses_per_circle, num_circles=5):
             sector_label = f"{'upper' if i < middle_ring else 'lower'}_{(j * 6) // poses_per_circle[i]}"
             if sector_label not in sector_map:
                 sector_map[sector_label] = []
-            if len(sector_map[sector_label]) < 10:
-                sector_map[sector_label].append(pose_idx)
+            # if len(sector_map[sector_label]) < 10:
+            sector_map[sector_label].append(pose_idx)
             circle_indices[f"elev_{i}"].append(pose_idx)
             pose_idx += 1
 
