@@ -165,8 +165,7 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
         u_bounds = (min(u_vals), max(u_vals))
         v_bounds = (min(v_vals), max(v_vals))
 
-        gt_images = [render_with_oracle(cam_center, object_center, pipe, oracle_gaussians, torch.tensor([1.0, 1.0, 1.0], device="cuda"), reference_camera) for cam_center in proposal_centers]
-        candidate_cams = [DummyCamera(*look_at(cam_center.detach(), object_center.detach()), reference_camera, image=gt_img.detach()) for cam_center, gt_img in zip(proposal_centers, gt_images)]
+        candidate_cams = [DummyCamera(*look_at(cam_center.detach(), object_center.detach()), reference_camera) for cam_center, gt_img in zip(proposal_centers, gt_images)]
 
         # Compute Fisher-trace based uncertainty at proposal poses
         uncertainties = selector.compute_fisher_uncertainty(gaussians, selected_cams, candidate_cams, pipe, background)
