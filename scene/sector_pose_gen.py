@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 
-def generate_circular_hemisphere_poses(center, num_circles=9, min_poses=60, radius=1.5):
+def generate_circular_hemisphere_poses(center, num_circles=9, min_poses=96, radius=1.5):
     """
     Generate poses on a hemisphere.
     """

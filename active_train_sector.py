@@ -219,13 +219,10 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
     pose_centers = torch.stack([cam.camera_center for cam in selected_cams], dim=0).cpu().numpy()
     np.save("oracle_gt_visualization/pose_centers.npy", pose_centers)
 
-    total_iterations = args.iterations
-    full_training_iters = total_iterations
-    for iteration in tqdm(range(1, full_training_iters + 1), desc="Full Training Loop"):
-        current_iter = iteration
-        gaussians.update_learning_rate(current_iter)
+    for iteration in tqdm(range(1, args.iterations + 1), desc="Full Training Loop"):
+        gaussians.update_learning_rate(iteration)
 
-        if current_iter % 1000 == 0:
+        if iteration % 1000 == 0:
             gaussians.oneupSHdegree()
 
         if not viewpoint_stack:
@@ -254,14 +251,14 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
                     gaussians.reset_opacity()
 
             # Optimizer step
-            if iteration < full_training_iters:
+            if iteration < args.iterations:
                 gaussians.optimizer.step()
                 gaussians.optimizer.zero_grad(set_to_none = True)
 
-        if current_iter in test_iterations:
+        if iteration in test_iterations:
             test_cams = scene.getAllCameras(1.0)
             psnr_total, ssim_total, lpips_total = 0.0, 0.0, 0.0
-            test_save_path = f"test_inspection/iter_{current_iter}"
+            test_save_path = f"test_inspection/iter_{iteration}"
             os.makedirs(test_save_path, exist_ok=True)
             for idx, cam in enumerate(test_cams):
                 test_img = render(cam, gaussians, pipe, background)["render"].clamp(0, 1)
@@ -272,10 +269,10 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
                 save_image(test_img.cpu(), os.path.join(test_save_path, f"render_{idx}.png"))
                 save_image(gt_img.cpu(), os.path.join(test_save_path, f"gt_{idx}.png"))
             num = len(test_cams)
-            print(f"[ITER {current_iter}] PSNR {psnr_total/num:.2f} SSIM {ssim_total/num:.4f} LPIPS {lpips_total/num:.4f}")
+            print(f"[ITER {iteration}] PSNR {psnr_total/num:.2f} SSIM {ssim_total/num:.4f} LPIPS {lpips_total/num:.4f}")
 
-        if current_iter in save_iterations:
-            scene.save(current_iter)
+        if iteration in save_iterations:
+            scene.save(iteration)
 
 def training_report(tb_writer, iteration, Ll1, loss, l1_loss_fn, elapsed, test_iterations, scene, render_fn, render_args):
     wandb.log({
