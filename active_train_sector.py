@@ -80,6 +80,7 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
         # Encode to base64
         oracle_image_paths.append(f"pose_{i}.png")
         dummy_camera = DummyCamera(*look_at(cam_center.detach(), object_center.detach()), reference_camera, image=gt_img.detach())
+        print(f"cam_center:{cam_center}, dummy_cam_center:{dummy_camera.camera_center}") 
         selected_middle_centers.append(cam_center.cpu().numpy().tolist())
         selected_cams.append(dummy_camera)
 
