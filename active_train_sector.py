@@ -58,8 +58,8 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
     reference_camera = scene.getAllCameras()[0]
     sample_radius = torch.norm(reference_camera.camera_center).item()
 
-    all_centers, all_uvs, pose_per_circle = generate_circular_hemisphere_poses(torch.tensor([0, 0, 0], device=object_center.device), radius=sample_radius)
-    circle_indices, middle_circle_indices, sector_map = divide_hemisphere_poses(all_centers, object_center.cpu().numpy(), pose_per_circle)
+    all_centers, all_uvs, pose_per_circle = generate_circular_hemisphere_poses(torch.tensor([0, 0, 0], device=object_center.device), num_circles=args.num_circles, min_poses=args.min_poses, radius=sample_radius)
+    circle_indices, middle_circle_indices, sector_map = divide_hemisphere_poses(all_centers, object_center.cpu().numpy(), pose_per_circle, num_circles=args.num_circles)
 
     middle_ids = np.random.choice(middle_circle_indices, size=6, replace=False)
     selected_cams = []
@@ -315,9 +315,9 @@ if __name__ == "__main__":
     lp = ModelParams(parser)
     op = OptimizationParams(parser)
     pp = PipelineParams(parser)
-    parser.add_argument("--initial_train", type=int, default=5000, help="Iterations for initial training")
-    parser.add_argument("--test_iterations", nargs="+", type=int, default=[5000, 10000, 15000, 20000, 25000, 30000])
-    parser.add_argument("--save_iterations", nargs="+", type=int, default=[7000, 30000])
+    parser.add_argument("--initial_train", type=int, default=5_000, help="Iterations for initial training")
+    parser.add_argument("--test_iterations", nargs="+", type=int, default=[5_000, 10_000, 15_000, 20_000, 25_000, 30_000])
+    parser.add_argument("--save_iterations", nargs="+", type=int, default=[7_000, 30_000])
     parser.add_argument("--oracle_model_path", type=str, required=True, help="Path to pretrained 3DGS model for oracle rendering")
     parser.add_argument('--debug_from', type=int, default=-1)
     parser.add_argument('--detect_anomaly', action='store_true', default=False)
@@ -333,6 +333,8 @@ if __name__ == "__main__":
     parser.add_argument("--sh_up_after", type=int, default=-1, help="start to increate active_sh_degree after N iterations")
     parser.add_argument("--min_opacity", type=float, default=0.005, help="min_opacity to prune")
     parser.add_argument("--filter_out_grad", nargs="+", type=str, default=["rotation"])
+    parser.add_argument("--num_circles", type=int, default=5, help="Number of circles on the view-hemisphere, that contains proposal poses")
+    parser.add_argument("--min_poses", type=int, default=30, help="Number of proposal poses on the smallest circle")
     args = parser.parse_args()
 
     wandb.init(project="active", config=vars(args))
