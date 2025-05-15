@@ -152,7 +152,7 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
         #Init Pose
         mean_center = proposal_centers.mean(0)
         dir_vec = mean_center
-        dir_vec = (dir_vec/torch.norm(dir_vec).item()) * sample_radius
+        dir_vec = (dir_vec/torch.norm(dir_vec).item())
         u = (np.arctan2(dir_vec[1].item(), dir_vec[0].item()) / (2 * np.pi)) % 1.0
         v = np.arccos(dir_vec[2].item()) / np.pi
         init_pose = (u, v) 
