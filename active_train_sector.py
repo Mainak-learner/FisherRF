@@ -167,6 +167,9 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
         v_bounds = (min(v_vals), max(v_vals))
 
         candidate_cams = [DummyCamera(*look_at(cam_center.detach(), object_center.detach()), reference_camera) for cam_center in proposal_centers]
+        for cam in candidate_cams:
+            print("Check-1")
+            print(f"cam_center:{candidate_cams[torch.argmax(uncertainties)]}, dummy_cam_center:{proposal_centers}")
 
         # Compute Fisher-trace based uncertainty at proposal poses
         uncertainties = selector.compute_fisher_uncertainty(gaussians, selected_cams, candidate_cams, pipe, background)
