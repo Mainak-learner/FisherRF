@@ -145,19 +145,17 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
         if len(sector_indices) == 0:
             continue
         
-        sector_centers = all_centers[sector_indices]
-        mean_center = sector_centers.mean(0)
-        dir_vec = mean_center
-        radius = torch.norm(dir_vec).item()
-        dir_vec /= radius
-
-        u = (np.arctan2(dir_vec[1].item(), dir_vec[0].item()) / (2 * np.pi)) % 1.0
-        v = np.arccos(dir_vec[2].item()) / np.pi
-        init_pose = (u, v, radius)
-
         # Get proposal UVs and centers for this sector
         proposal_uvs = [all_uvs[idx] for idx in sector_indices]
         proposal_centers = all_centers[sector_indices]
+
+        #Init Pose
+        mean_center = proposal_centers.mean(0)
+        dir_vec = mean_center
+        dir_vec = (dir_vec/torch.norm(dir_vec).item()) * sample_radius
+        u = (np.arctan2(dir_vec[1].item(), dir_vec[0].item()) / (2 * np.pi)) % 1.0
+        v = np.arccos(dir_vec[2].item()) / np.pi
+        init_pose = (u, v) 
 
         u_vals = [uv[0] for uv in proposal_uvs]
         v_vals = [uv[1] for uv in proposal_uvs]
@@ -192,10 +190,11 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
             proposal_uvs=[all_uvs[i] for i in sector_indices],
             proposal_centers=[all_centers[i].cpu().numpy() for i in sector_indices],
             uncertainties=uncertainties,  # should be tensor
-            init_uv=init_pose[:2],
+            init_uv=init_pose,
             uv_bounds=(u_bounds, v_bounds),
             radius=sample_radius,
-            steps=100
+            steps=args.pose_optim_steps,
+            lr=args.pose_lr
         )
         # Create DummyCamera for selected pose
         oracle_img = render_with_oracle(center_opt, object_center, pipe, oracle_gaussians, background, reference_camera)
@@ -335,6 +334,8 @@ if __name__ == "__main__":
     parser.add_argument("--filter_out_grad", nargs="+", type=str, default=["rotation"])
     parser.add_argument("--num_circles", type=int, default=5, help="Number of circles on the view-hemisphere, that contains proposal poses")
     parser.add_argument("--min_poses", type=int, default=30, help="Number of proposal poses on the smallest circle")
+    parser.add_argument("--pose_lr", type=float, default=1e-4, help="Default learning rate for pose optimization")
+    parser.add_argument("--pose_optim_steps", type=float, default=200, help="Default learning rate for pose optimization")
     args = parser.parse_args()
 
     wandb.init(project="active", config=vars(args))
