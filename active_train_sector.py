@@ -158,7 +158,7 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
         v = np.arccos(dir_vec[2].item()) / np.pi
         init_pose = (u, v) 
 
-        sector_init_poses.append(mean_center)
+        sector_init_poses.append(mean_center.detach().cpu().numpy())
         u_vals = [uv[0] for uv in proposal_uvs]
         v_vals = [uv[1] for uv in proposal_uvs]
 
