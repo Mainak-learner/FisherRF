@@ -87,7 +87,7 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
     background = torch.tensor([1.0, 1.0, 1.0], dtype=torch.float32, device="cuda")
 
     viewpoint_stack=None 
-    for iteration in tqdm(range(1, args.initial_train + 1), desc="Initial Training on Middle Circle"):
+    for iteration in tqdm(range(1, 100 + 1), desc="Initial Training on Middle Circle"):
         gaussians.update_learning_rate(iteration)
 
         if iteration % 1000 == 0:
@@ -194,6 +194,7 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
             final_cam = candidate_cams[torch.argmax(uncertainties)]
             oracle_img = render_with_oracle(final_cam.camera_center, object_center, pipe, oracle_gaussians, background, reference_camera)
             final_cam.original_image = oracle_img.detach().clamp(0.0, 1.0).cuda()
+            print(f"cam_center:{proposal_centers[torch.argmax(uncertainties)]}, dummy_cam_center:{final_cam.camera_center}")
         else:
             center_opt, uv_opt = selector.optimize_gp_posterior(
                 proposal_uvs=[all_uvs[i] for i in sector_indices],
