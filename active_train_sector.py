@@ -188,21 +188,26 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
         # oracle_img = render_with_oracle(new_cam_center, object_center, pipe, oracle_gaussians, background, reference_camera)
 
         # Fit GP on proposal UVs and predict over full hemisphere
-        center_opt, uv_opt = selector.optimize_gp_posterior(
-            proposal_uvs=[all_uvs[i] for i in sector_indices],
-            proposal_centers=[all_centers[i].cpu().numpy() for i in sector_indices],
-            uncertainties=uncertainties,  # should be tensor
-            init_uv=init_pose,
-            uv_bounds=(u_bounds, v_bounds),
-            radius=sample_radius,
-            steps=args.pose_optim_steps,
-            lr=args.pose_lr
-        )
-        # Create DummyCamera for selected pose
-        oracle_img = render_with_oracle(center_opt, object_center, pipe, oracle_gaussians, background, reference_camera)
-        dummy_camera = DummyCamera(*look_at(center_opt.detach(), object_center.detach()), reference_camera, image=oracle_img.detach())
 
-        sector_selections.append(dummy_camera)
+        if args.selector_type=="selection":
+            final_cam = candidate_cams[torch.argmax(uncertainties)]
+            oracle_img = render_with_oracle(final_cam.camera_center, object_center, pipe, oracle_gaussians, background, reference_camera)
+        else:
+            center_opt, uv_opt = selector.optimize_gp_posterior(
+                proposal_uvs=[all_uvs[i] for i in sector_indices],
+                proposal_centers=[all_centers[i].cpu().numpy() for i in sector_indices],
+                uncertainties=uncertainties,  # should be tensor
+                init_uv=init_pose,
+                uv_bounds=(u_bounds, v_bounds),
+                radius=sample_radius,
+                steps=args.pose_optim_steps,
+                lr=args.pose_lr
+            )
+            # Create DummyCamera for selected pose
+            oracle_img = render_with_oracle(center_opt, object_center, pipe, oracle_gaussians, background, reference_camera)
+            final_cam = DummyCamera(*look_at(center_opt.detach(), object_center.detach()), reference_camera, image=oracle_img.detach())
+
+        sector_selections.append(final_cam)
         img_path = f"oracle_gt_visualization/pose_{len(sector_selections) + 6}.png"
         TF.to_pil_image(oracle_img.clamp(0, 1).cpu()).save(img_path)
 
@@ -337,8 +342,9 @@ if __name__ == "__main__":
     parser.add_argument("--filter_out_grad", nargs="+", type=str, default=["rotation"])
     parser.add_argument("--num_circles", type=int, default=5, help="Number of circles on the view-hemisphere, that contains proposal poses")
     parser.add_argument("--min_poses", type=int, default=30, help="Number of proposal poses on the smallest circle")
-    parser.add_argument("--pose_lr", type=float, default=1e-5, help="Default learning rate for pose optimization")
-    parser.add_argument("--pose_optim_steps", type=float, default=200, help="Default learning rate for pose optimization")
+    parser.add_argument("--pose_lr", type=float, default=1e-5, help="Learning rate for pose optimization")
+    parser.add_argument("--pose_optim_steps", type=float, default=200, help="Number of steps for pose optimization")
+    parser.add_argument("--nbv_process", type=str, default="optimization", help="Process of reaching NBV", choices=["optimization", "selection"])
     args = parser.parse_args()
 
     wandb.init(project="active", config=vars(args))
