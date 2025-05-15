@@ -222,7 +222,7 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
     proposal_pose_centers = torch.stack([center for center in all_centers], dim=0).cpu().numpy()
     np.save("oracle_gt_visualization/selected_pose_centers.npy", selected_pose_centers)
     np.save("oracle_gt_visualization/proposal_pose_centers.npy", proposal_pose_centers)
-    np.save("oracle_gt_visaulization/init_poses.npy", sector_init_poses)
+    np.save("oracle_gt_visualization/init_poses.npy", sector_init_poses)
 
     for iteration in tqdm(range(1, args.iterations + 1), desc="Full Training Loop"):
         gaussians.update_learning_rate(iteration)
