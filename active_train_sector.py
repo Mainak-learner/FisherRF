@@ -189,7 +189,7 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
 
         # Fit GP on proposal UVs and predict over full hemisphere
 
-        if args.selector_type=="selection":
+        if args.nbv_process=="selection":
             final_cam = candidate_cams[torch.argmax(uncertainties)]
             oracle_img = render_with_oracle(final_cam.camera_center, object_center, pipe, oracle_gaussians, background, reference_camera)
         else:
