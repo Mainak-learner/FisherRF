@@ -141,6 +141,7 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
     print(f"[Middle Circle] PSNR: {psnr_total/N:.2f}, SSIM: {ssim_total/N:.4f}, LPIPS: {lpips_total/N:.4f}")
     selector = GPFisherNBVSelector(args, device="cuda")
     sector_selections = []
+    sector_init_poses=[]
     for sector_id, sector_indices in sector_map.items():
         if len(sector_indices) == 0:
             continue
@@ -157,6 +158,7 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
         v = np.arccos(dir_vec[2].item()) / np.pi
         init_pose = (u, v) 
 
+        sector_init_poses.append(mean_center)
         u_vals = [uv[0] for uv in proposal_uvs]
         v_vals = [uv[1] for uv in proposal_uvs]
 
@@ -220,6 +222,7 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
     proposal_pose_centers = torch.stack([center for center in all_centers], dim=0).cpu().numpy()
     np.save("oracle_gt_visualization/selected_pose_centers.npy", selected_pose_centers)
     np.save("oracle_gt_visualization/proposal_pose_centers.npy", proposal_pose_centers)
+    np.save("oracle_gt_visaulization/init_poses.npy", sector_init_poses)
 
     for iteration in tqdm(range(1, args.iterations + 1), desc="Full Training Loop"):
         gaussians.update_learning_rate(iteration)
