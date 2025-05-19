@@ -133,10 +133,6 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
         psnr_total += psnr(rendered, gt_image).mean().item()
         ssim_total += ssim(rendered, gt_image).mean().item()
         lpips_total += lpips(rendered, gt_image).mean().item()
-
-        # Save copies for inspection
-        save_image(rendered.cpu(), f"middle_render_vs_gt/render_{idx}.png")
-        save_image(gt_image.cpu(), f"middle_render_vs_gt/gt_{idx}.png")
     
     N = len(selected_cams)
     print(f"[Middle Circle] PSNR: {psnr_total/N:.2f}, SSIM: {ssim_total/N:.4f}, LPIPS: {lpips_total/N:.4f}")
