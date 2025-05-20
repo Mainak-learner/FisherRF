@@ -190,8 +190,22 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
             final_cam = candidate_cams[torch.argmax(uncertainties)]
             oracle_img = render_with_oracle(final_cam.camera_center, object_center, pipe, oracle_gaussians, background, reference_camera)
             final_cam.original_image = oracle_img.detach().clamp(0.0, 1.0).cuda()
-        else:
+        elif args.deepgp:
             center_opt, uv_opt = selector.optimize_gp_posterior_dkl(
+                proposal_uvs=[all_uvs[i] for i in sector_indices],
+                proposal_centers=[all_centers[i].cpu().numpy() for i in sector_indices],
+                uncertainties=uncertainties,  # should be tensor
+                init_uv=init_pose,
+                uv_bounds=(u_bounds, v_bounds),
+                radius=sample_radius,
+                steps=args.pose_optim_steps,
+                lr=args.pose_lr
+            )
+            # Create DummyCamera for selected pose
+            oracle_img = render_with_oracle(center_opt, object_center, pipe, oracle_gaussians, background, reference_camera)
+            final_cam = DummyCamera(*look_at(center_opt.detach(), object_center.detach()), reference_camera, image=oracle_img.detach())
+        else:
+            center_opt, uv_opt = selector.optimize_gp_posterior(
                 proposal_uvs=[all_uvs[i] for i in sector_indices],
                 proposal_centers=[all_centers[i].cpu().numpy() for i in sector_indices],
                 uncertainties=uncertainties,  # should be tensor
@@ -338,7 +352,7 @@ if __name__ == "__main__":
     parser.add_argument("--filter_out_grad", nargs="+", type=str, default=["rotation"])
     parser.add_argument("--num_circles", type=int, default=5, help="Number of circles on the view-hemisphere, that contains proposal poses")
     parser.add_argument("--min_poses", type=int, default=30, help="Number of proposal poses on the smallest circle")
-    parser.add_argument("--pose_lr", type=float, default=1e-5, help="Learning rate for pose optimization")
+    parser.add_argument("--pose_lr", type=float, default=1e-3, help="Learning rate for pose optimization")
     parser.add_argument("--pose_optim_steps", type=float, default=200, help="Number of steps for pose optimization")
     parser.add_argument("--nbv_process", type=str, default="optimization", help="Process of reaching NBV", choices=["optimization", "selection"])
     parser.add_argument("--deepgp", action="store_true", help="Use Deep GP for uncertainty approximation")

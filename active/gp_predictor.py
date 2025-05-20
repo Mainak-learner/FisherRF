@@ -68,7 +68,7 @@ class GPFisherNBVSelector(Module):
         self.model.train()
         self.likelihood.train()
 
-        optimizer = torch.optim.Adam(self.model.parameters(), lr=0.01)
+        optimizer = torch.optim.Adam(self.model.parameters(), lr=1e-3)
         mll = ExactMarginalLogLikelihood(self.likelihood, self.model)
 
         for _ in range(steps):  # Tune num iterations as needed
