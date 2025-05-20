@@ -191,7 +191,7 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
             oracle_img = render_with_oracle(final_cam.camera_center, object_center, pipe, oracle_gaussians, background, reference_camera)
             final_cam.original_image = oracle_img.detach().clamp(0.0, 1.0).cuda()
         else:
-            center_opt, uv_opt = selector.optimize_gp_posterior(
+            center_opt, uv_opt = selector.optimize_gp_posterior_dkl(
                 proposal_uvs=[all_uvs[i] for i in sector_indices],
                 proposal_centers=[all_centers[i].cpu().numpy() for i in sector_indices],
                 uncertainties=uncertainties,  # should be tensor
