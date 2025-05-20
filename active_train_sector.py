@@ -136,7 +136,7 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
     
     N = len(selected_cams)
     print(f"[Middle Circle] PSNR: {psnr_total/N:.2f}, SSIM: {ssim_total/N:.4f}, LPIPS: {lpips_total/N:.4f}")
-    selector = GPFisherNBVSelector(args, device="cuda", deepGP=True)
+    selector = GPFisherNBVSelector(args, device="cuda")
     sector_selections = []
     sector_init_poses=[]
     for sector_id, sector_indices in sector_map.items():
@@ -274,8 +274,6 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
                 psnr_total += psnr(test_img, gt_img).mean().item()
                 ssim_total += ssim(test_img, gt_img).mean().item()
                 lpips_total += lpips(test_img, gt_img).mean().item()
-                save_image(test_img.cpu(), os.path.join(test_save_path, f"render_{idx}.png"))
-                save_image(gt_img.cpu(), os.path.join(test_save_path, f"gt_{idx}.png"))
             num = len(test_cams)
             print(f"[ITER {iteration}] PSNR {psnr_total/num:.2f} SSIM {ssim_total/num:.4f} LPIPS {lpips_total/num:.4f}")
 

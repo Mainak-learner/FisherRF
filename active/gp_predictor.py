@@ -39,7 +39,7 @@ class DeepGPModel(ExactGP):
 
 
 class GPFisherNBVSelector(Module):
-    def __init__(self, args, device="cuda", lengthscale=0.15, sigma_f=1.0, noise=1e-6, deepGP=True):
+    def __init__(self, args, device="cuda", lengthscale=0.15, sigma_f=1.0, noise=1e-6):
         super().__init__()
         self.device = device
         self.l = lengthscale
@@ -52,7 +52,7 @@ class GPFisherNBVSelector(Module):
         self.I_acq_reg: bool = args.I_acq_reg
 
         #Deep GP:
-        if deepGP:
+        if args.deepgp:
             self.feature_extractor = GPFeatureExtractor(input_dim=3).to(self.device)
             self.likelihood = GaussianLikelihood().to(self.device)
             self.model = None  # will be set at training time
@@ -60,7 +60,7 @@ class GPFisherNBVSelector(Module):
         name2idx = {"xyz": 0, "rgb": 1, "sh": 2, "scale": 3, "rotation": 4, "opacity": 5}
         self.filter_out_idx: List[str] = [name2idx[k] for k in args.filter_out_grad]
 
-    def train_dkl_gp(self, X_train, y_train):
+    def train_dkl_gp(self, X_train, y_train, steps=200):
         X_train = X_train.to(self.device)
         y_train = y_train.squeeze().to(self.device)
 
@@ -71,7 +71,7 @@ class GPFisherNBVSelector(Module):
         optimizer = torch.optim.Adam(self.model.parameters(), lr=0.01)
         mll = ExactMarginalLogLikelihood(self.likelihood, self.model)
 
-        for _ in range(100):  # Tune num iterations as needed
+        for _ in range(steps):  # Tune num iterations as needed
             optimizer.zero_grad()
             output = self.model(X_train)
             loss = -mll(output, y_train)
@@ -140,7 +140,7 @@ class GPFisherNBVSelector(Module):
 
         return torch.tensor(acq_scores, device=params[0].device)
 
-    def optimize_gp_posterior(self, proposal_uvs, proposal_centers, uncertainties, init_uv, uv_bounds, radius, steps=100, lr=1e-2):
+    def optimize_gp_posterior(self, proposal_uvs, proposal_centers, uncertainties, init_uv, uv_bounds, radius, steps=200, lr=1e-2):
         """
         Args:
             proposal_uvs: (N, 2) list of (u, v) for training proposals
