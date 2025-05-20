@@ -8,9 +8,38 @@ from scene import Scene
 from utils.camera_utils import look_at, look_at_torch
 from utils.graphics_utils import uv2car_torch
 from gaussian_renderer import render, network_gui, modified_render
+import gpytorch
+from gpytorch.models import ExactGP
+from gpytorch.kernels import ScaleKernel, RBFKernel
+from gpytorch.mlls import ExactMarginalLogLikelihood
+from gpytorch.likelihoods import GaussianLikelihood
+
+class GPFeatureExtractor(torch.nn.Sequential):
+    def __init__(self, input_dim):
+        super().__init__(
+            torch.nn.Linear(input_dim, 128),
+            torch.nn.ReLU(),
+            torch.nn.Linear(128, 64),
+            torch.nn.ReLU(),
+            torch.nn.Linear(64, 32),
+        )
+
+class DeepGPModel(ExactGP):
+    def __init__(self, train_x, train_y, likelihood, feature_extractor):
+        super().__init__(train_x, train_y, likelihood)
+        self.feature_extractor = feature_extractor
+        self.mean_module = gpytorch.means.ConstantMean()
+        self.covar_module = ScaleKernel(RBFKernel())
+
+    def forward(self, x):
+        x = self.feature_extractor(x)
+        mean_x = self.mean_module(x)
+        covar_x = self.covar_module(x)
+        return gpytorch.distributions.MultivariateNormal(mean_x, covar_x)
+
 
 class GPFisherNBVSelector(Module):
-    def __init__(self, args, device="cuda", lengthscale=0.15, sigma_f=1.0, noise=1e-6):
+    def __init__(self, args, device="cuda", lengthscale=0.15, sigma_f=1.0, noise=1e-6, deepGP=True):
         super().__init__()
         self.device = device
         self.l = lengthscale
@@ -22,8 +51,32 @@ class GPFisherNBVSelector(Module):
         self.I_test: bool = args.I_test
         self.I_acq_reg: bool = args.I_acq_reg
 
+        #Deep GP:
+        if deepGP:
+            self.feature_extractor = GPFeatureExtractor(input_dim=3).to(self.device)
+            self.likelihood = GaussianLikelihood().to(self.device)
+            self.model = None  # will be set at training time
+
         name2idx = {"xyz": 0, "rgb": 1, "sh": 2, "scale": 3, "rotation": 4, "opacity": 5}
         self.filter_out_idx: List[str] = [name2idx[k] for k in args.filter_out_grad]
+
+    def train_dkl_gp(self, X_train, y_train):
+        X_train = X_train.to(self.device)
+        y_train = y_train.squeeze().to(self.device)
+
+        self.model = DeepGPModel(X_train, y_train, self.likelihood, self.feature_extractor).to(self.device)
+        self.model.train()
+        self.likelihood.train()
+
+        optimizer = torch.optim.Adam(self.model.parameters(), lr=0.01)
+        mll = ExactMarginalLogLikelihood(self.likelihood, self.model)
+
+        for _ in range(100):  # Tune num iterations as needed
+            optimizer.zero_grad()
+            output = self.model(X_train)
+            loss = -mll(output, y_train)
+            loss.backward()
+            optimizer.step()
 
     def rbf_kernel(self, X1, X2):
         """
@@ -132,6 +185,65 @@ class GPFisherNBVSelector(Module):
             loss.backward()
             optimizer.step()
 
+            u.data.clamp_(u_min, u_max)
+            v.data.clamp_(v_min, v_max)
+
+        final_uv = (u.item(), v.item())
+        final_center = uv2car_torch(u.detach(), v.detach()).squeeze(0) * radius
+        return final_center, final_uv
+
+    def optimize_gp_posterior_dkl(self, proposal_uvs, proposal_centers, uncertainties, init_uv, uv_bounds, radius, steps=100, lr=1e-2):
+        """
+        Optimizes the GP posterior mean over the hemisphere using Deep Kernel Learning (DKL).
+        Args:
+            proposal_uvs: (N, 2) tensor of proposal (u, v) angles
+            proposal_centers: (N, 3) tensor of world camera centers (training inputs)
+            uncertainties: (N,) tensor of target uncertainties
+            init_uv: (u, v) tuple - starting point for optimization
+            uv_bounds: ((u_min, u_max), (v_min, v_max)) bounds for search
+            radius: float - fixed distance to project camera center
+            steps: int - number of optimization steps
+            lr: float - learning rate
+        Returns:
+            optimized_cam_center: (3,) tensor
+            optimized_uv: (u, v) tuple
+        """
+        device = self.device
+        u_min, u_max = uv_bounds[0]
+        v_min, v_max = uv_bounds[1]
+
+        # Create training data tensors
+        X_train = torch.tensor(proposal_centers, dtype=torch.float32, device=device)
+        y_train = uncertainties.to(device).squeeze()  # (N,)
+
+        # Train the DKL GP model
+        self.train_dkl_gp(X_train, y_train)  # sets self.model and self.likelihood
+
+        # Initialize UV parameters to optimize
+        u = torch.tensor([init_uv[0]], device=device, dtype=torch.float32, requires_grad=True)
+        v = torch.tensor([init_uv[1]], device=device, dtype=torch.float32, requires_grad=True)
+        uv_optimizer = torch.optim.Adam([u, v], lr=lr)
+
+        self.model.eval()
+        self.likelihood.eval()
+
+        for _ in range(steps):
+            uv_optimizer.zero_grad()
+
+            # Convert (u, v) to (x, y, z) camera center
+            cam_center = uv2car_torch(u, v) * radius  # (1, 3)
+
+            # Query GP prediction at this cam center
+            with gpytorch.settings.fast_pred_var():
+                pred = self.model(cam_center)
+                mu = pred.mean  # (1,)
+
+            # Maximize the mean => minimize negative
+            loss = -mu
+            loss.backward()
+            uv_optimizer.step()
+
+            # Clamp UV values
             u.data.clamp_(u_min, u_max)
             v.data.clamp_(v_min, v_max)
 

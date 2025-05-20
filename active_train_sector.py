@@ -136,7 +136,7 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
     
     N = len(selected_cams)
     print(f"[Middle Circle] PSNR: {psnr_total/N:.2f}, SSIM: {ssim_total/N:.4f}, LPIPS: {lpips_total/N:.4f}")
-    selector = GPFisherNBVSelector(args, device="cuda")
+    selector = GPFisherNBVSelector(args, device="cuda", deepGP=True)
     sector_selections = []
     sector_init_poses=[]
     for sector_id, sector_indices in sector_map.items():
@@ -343,6 +343,7 @@ if __name__ == "__main__":
     parser.add_argument("--pose_lr", type=float, default=1e-5, help="Learning rate for pose optimization")
     parser.add_argument("--pose_optim_steps", type=float, default=200, help="Number of steps for pose optimization")
     parser.add_argument("--nbv_process", type=str, default="optimization", help="Process of reaching NBV", choices=["optimization", "selection"])
+    parser.add_argument("--deepgp", action="store_true", help="Use Deep GP for uncertainty approximation")
     args = parser.parse_args()
 
     wandb.init(project="active", config=vars(args))
