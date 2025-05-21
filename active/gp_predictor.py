@@ -56,6 +56,7 @@ class GPFisherNBVSelector(Module):
             self.feature_extractor = GPFeatureExtractor(input_dim=3).to(self.device)
             self.likelihood = GaussianLikelihood().to(self.device)
             self.model = None  # will be set at training time
+            self.ucb_beta = 2.0
 
         name2idx = {"xyz": 0, "rgb": 1, "sh": 2, "scale": 3, "rotation": 4, "opacity": 5}
         self.filter_out_idx: List[str] = [name2idx[k] for k in args.filter_out_grad]
@@ -237,9 +238,11 @@ class GPFisherNBVSelector(Module):
             with gpytorch.settings.fast_pred_var():
                 pred = self.model(cam_center)
                 mu = pred.mean  # (1,)
+                sigma = pred.variance.sqrt()
 
             # Maximize the mean => minimize negative
-            loss = -mu
+            acquisition = mu + self.ucb_beta * sigma
+            loss = -acquisition
             loss.backward()
             uv_optimizer.step()
 
