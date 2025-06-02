@@ -141,10 +141,13 @@ class VDGPFisherNBVSelector(Module):
         torch.autograd.set_detect_anomaly(True)
         for i in range(num_steps):
             optimizer.zero_grad()
-            loss = loss_fn(self.gp2.model, self.gp2.guide)
-            loss = loss.clone()  # ensure no in-place ops issue
-            loss.backward(retain_graph=True)
+
+            # Rebuild the loss in this iteration
+            loss = pyro.infer.Trace_ELBO().differentiable_loss(self.gp2.model, self.gp2.guide)
+            
+            loss.backward()  # No retain_graph!
             optimizer.step()
+            
             if (i+1) % 50 == 0:
                 print(f"Step {i+1}/{num_steps}, Loss: {loss.item():.3f}")
 
