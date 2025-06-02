@@ -3,6 +3,7 @@ import numpy as np
 from scipy.spatial.distance import cdist
 from typing import List
 from torch.nn import Module
+import torch.nn as nn
 from tqdm import tqdm
 from scene import Scene
 from utils.camera_utils import look_at, look_at_torch
