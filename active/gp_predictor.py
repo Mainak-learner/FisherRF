@@ -22,6 +22,7 @@ class VDGPFisherNBVSelector(Module):
         super().__init__()
         self.device = device
         self.input_dim = input_dim
+        self.hidden_dim = hidden_dim
 
         self.seed = args.seed
         self.reg_lambda = args.reg_lambda
@@ -31,7 +32,7 @@ class VDGPFisherNBVSelector(Module):
         name2idx = {"xyz": 0, "rgb": 1, "sh": 2, "scale": 3, "rotation": 4, "opacity": 5}
         self.filter_out_idx: List[str] = [name2idx[k] for k in args.filter_out_grad]
 
-        # 2-layer Deep GP
+        # 1st GP: 3D → 1D latent
         self.gp1 = gp.models.VariationalSparseGP(
             X=torch.empty(0, input_dim).to(device),
             y=None,
@@ -40,6 +41,14 @@ class VDGPFisherNBVSelector(Module):
             likelihood=None
         )
 
+        # Projection MLP: 1D → hidden_dim
+        self.projection = nn.Sequential(
+            nn.Linear(1, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim),
+        ).to(device)
+
+        # 2nd GP: hidden_dim → uncertainty
         self.gp2 = gp.models.VariationalSparseGP(
             X=torch.empty(0, hidden_dim).to(device),
             y=None,
@@ -105,7 +114,7 @@ class VDGPFisherNBVSelector(Module):
         X_train = X_train.to(self.device)
         y_train = y_train.to(self.device)
 
-        # Ensure device consistency
+        # Consistency
         self.gp1.Xu = self.gp1.Xu.to(self.device)
         self.gp2.Xu = self.gp2.Xu.to(self.device)
         for param in self.gp1.kernel.parameters():
@@ -113,35 +122,34 @@ class VDGPFisherNBVSelector(Module):
         for param in self.gp2.kernel.parameters():
             param.data = param.data.to(self.device)
 
-        # Initialize inducing inputs
+        # 1st GP prediction
         self.gp1.set_data(X=X_train)
-        h_mean, _ = self.gp1.forward(X_train)  # Only use mean
-        self.gp2.set_data(X=h_mean, y=y_train)
+        h_mean, _ = self.gp1.forward(X_train)  # (N, 1)
 
+        # Project to hidden_dim
+        h_latent = self.projection(h_mean.unsqueeze(-1))  # (N, hidden_dim)
+
+        # 2nd GP training
+        self.gp2.set_data(X=h_latent, y=y_train)
         optimizer = torch.optim.Adam(self.parameters(), lr=lr)
-        loss_fn = Trace_ELBO().differentiable_loss
+        loss_fn = pyro.infer.Trace_ELBO().differentiable_loss
 
         for i in range(num_steps):
             optimizer.zero_grad()
             loss = loss_fn(self.gp2.model, self.gp2.guide)
             loss.backward()
             optimizer.step()
-
             if (i+1) % 50 == 0:
                 print(f"Step {i+1}/{num_steps}, Loss: {loss.item():.3f}")
 
 
 
     def optimize_gp_posterior_vdgp(self, proposal_uvs, proposal_centers, uncertainties, init_uv, uv_bounds, radius, steps=100, lr=1e-2, beta=2.0):
-        """
-        Optimize camera pose (u, v) to maximize uncertainty estimate via VDGP.
-        """
         device = self.device
         u_min, u_max = uv_bounds[0]
         v_min, v_max = uv_bounds[1]
 
-        # Create training data
-        X_train = torch.tensor(proposal_centers, dtype=torch.float32, device=device)
+        X_train = torch.tensor(np.array(proposal_centers), dtype=torch.float32, device=device)
         y_train = uncertainties.to(device).squeeze()
 
         self.train_vdgp(X_train, y_train)
@@ -152,13 +160,13 @@ class VDGPFisherNBVSelector(Module):
 
         for _ in range(steps):
             uv_optimizer.zero_grad()
-
             cam_center = uv2car_torch(u, v) * radius  # (1, 3)
 
-            # Predict with VDGP
+            # 1st GP prediction
             with torch.no_grad():
-                h_star = self.gp1.forward(cam_center)
-                mean, var = self.gp2.forward(h_star, full_cov=False)
+                h_mean, _ = self.gp1.forward(cam_center)  # (1, 1)
+                h_latent = self.projection(h_mean.unsqueeze(-1))  # (1, hidden_dim)
+                mean, var = self.gp2.forward(h_latent, full_cov=False)
 
             acquisition = mean + beta * var.sqrt()
             loss = -acquisition
