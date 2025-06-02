@@ -10,7 +10,7 @@ from utils.graphics_utils import uv2car_torch
 from gaussian_renderer import render, network_gui, modified_render
 import pyro
 import pyro.contrib.gp as gp
-from pyro.infer.elbo import TraceELBO
+from pyro.infer import Trace_ELBO
 import gpytorch
 from gpytorch.models import ExactGP
 from gpytorch.kernels import ScaleKernel, RBFKernel
@@ -119,7 +119,7 @@ class VDGPFisherNBVSelector(Module):
         self.gp2.set_data(X=h_mean, y=y_train)
 
         optimizer = torch.optim.Adam(self.parameters(), lr=lr)
-        loss_fn = TraceELBO().differentiable_loss
+        loss_fn = Trace_ELBO().differentiable_loss
 
         for i in range(num_steps):
             optimizer.zero_grad()
