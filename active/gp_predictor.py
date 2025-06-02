@@ -104,6 +104,14 @@ class VDGPFisherNBVSelector(Module):
         X_train = X_train.to(self.device)
         y_train = y_train.to(self.device)
 
+        # Ensure inducing inputs and kernel params are on the same device
+        self.gp1.Xu = self.gp1.Xu.to(self.device)
+        self.gp2.Xu = self.gp2.Xu.to(self.device)
+        for param in self.gp1.kernel.parameters():
+            param.data = param.data.to(self.device)
+        for param in self.gp2.kernel.parameters():
+            param.data = param.data.to(self.device)
+
         # Initialize inducing inputs
         self.gp1.set_data(X=X_train)
         h = self.gp1.forward(X_train)
@@ -120,6 +128,7 @@ class VDGPFisherNBVSelector(Module):
 
             if (i+1) % 50 == 0:
                 print(f"Step {i+1}/{num_steps}, Loss: {loss.item():.3f}")
+
 
     def optimize_gp_posterior_vdgp(self, proposal_uvs, proposal_centers, uncertainties, init_uv, uv_bounds, radius, steps=100, lr=1e-2, beta=2.0):
         """
