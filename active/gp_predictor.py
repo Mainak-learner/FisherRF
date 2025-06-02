@@ -8,11 +8,107 @@ from scene import Scene
 from utils.camera_utils import look_at, look_at_torch
 from utils.graphics_utils import uv2car_torch
 from gaussian_renderer import render, network_gui, modified_render
+import pyro
+import pyro.contrib.gp as gp
 import gpytorch
 from gpytorch.models import ExactGP
 from gpytorch.kernels import ScaleKernel, RBFKernel
 from gpytorch.mlls import ExactMarginalLogLikelihood
 from gpytorch.likelihoods import GaussianLikelihood
+
+class VDGPFisherNBVSelector(Module):
+    def __init__(self, input_dim, hidden_dim=16, num_inducing=32, device="cuda"):
+        super().__init__()
+        self.device = device
+        self.input_dim = input_dim
+
+        # 2-layer Deep GP
+        self.gp1 = gp.models.VariationalSparseGP(
+            X=torch.empty(0, input_dim).to(device),
+            y=None,
+            kernel=gp.kernels.RBF(input_dim),
+            Xu=torch.randn(num_inducing, input_dim).to(device),
+            likelihood=None
+        )
+
+        self.gp2 = gp.models.VariationalSparseGP(
+            X=torch.empty(0, hidden_dim).to(device),
+            y=None,
+            kernel=gp.kernels.RBF(hidden_dim),
+            Xu=torch.randn(num_inducing, hidden_dim).to(device),
+            likelihood=gp.likelihoods.Gaussian()
+        )
+
+    def forward(self, x):
+        h = self.gp1.model(x)
+        out = self.gp2.model(h)
+        return out
+    
+    def train_vdgp(self, X_train, y_train, num_steps=500, lr=1e-2):
+        X_train = X_train.to(self.device)
+        y_train = y_train.to(self.device)
+
+        # Initialize inducing inputs
+        self.gp1.set_data(X=X_train)
+        h = self.gp1.model(X_train)
+        self.gp2.set_data(X=h, y=y_train)
+
+        optimizer = torch.optim.Adam(self.parameters(), lr=lr)
+        loss_fn = pyro.infer.TraceELBO().differentiable_loss
+
+        for i in range(num_steps):
+            optimizer.zero_grad()
+            loss = loss_fn(self.gp2.model, self.gp2.guide)
+            loss.backward()
+            optimizer.step()
+
+            if (i+1) % 50 == 0:
+                print(f"Step {i+1}/{num_steps}, Loss: {loss.item():.3f}")
+
+    def optimize_gp_posterior_vdgp(self, proposal_uvs, proposal_centers, uncertainties, init_uv, uv_bounds, radius, steps=100, lr=1e-2, beta=2.0):
+        """
+        Optimize camera pose (u, v) to maximize uncertainty estimate via VDGP.
+        """
+        device = self.device
+        u_min, u_max = uv_bounds[0]
+        v_min, v_max = uv_bounds[1]
+
+        # Create training data
+        X_train = torch.tensor(proposal_centers, dtype=torch.float32, device=device)
+        y_train = uncertainties.to(device).squeeze()
+
+        # Train the VDGP
+        self.train_vdgp(X_train, y_train)
+
+        # Initialize UV for optimization
+        u = torch.tensor([init_uv[0]], device=device, dtype=torch.float32, requires_grad=True)
+        v = torch.tensor([init_uv[1]], device=device, dtype=torch.float32, requires_grad=True)
+        uv_optimizer = torch.optim.Adam([u, v], lr=lr)
+
+        for _ in range(steps):
+            uv_optimizer.zero_grad()
+
+            # Convert (u, v) to camera center
+            cam_center = uv2car_torch(u, v) * radius  # (1, 3)
+
+            # Predict using the VDGP
+            with torch.no_grad():
+                h_star = self.gp1.model(cam_center)
+                mean, var = self.gp2.model(h_star, full_cov=False)
+
+            # UCB acquisition
+            acquisition = mean + beta * var.sqrt()
+            loss = -acquisition
+            loss.backward()
+            uv_optimizer.step()
+
+            # Clamp u and v
+            u.data.clamp_(u_min, u_max)
+            v.data.clamp_(v_min, v_max)
+
+        final_uv = (u.item(), v.item())
+        final_center = uv2car_torch(u.detach(), v.detach()).squeeze(0) * radius
+        return final_center, final_uv
 
 class GPFeatureExtractor(torch.nn.Sequential):
     def __init__(self, input_dim):
@@ -52,7 +148,7 @@ class GPFisherNBVSelector(Module):
         self.I_acq_reg: bool = args.I_acq_reg
 
         #Deep GP:
-        if args.deepgp:
+        if args.deepkgp:
             self.feature_extractor = GPFeatureExtractor(input_dim=3).to(self.device)
             self.likelihood = GaussianLikelihood().to(self.device)
             self.model = None  # will be set at training time

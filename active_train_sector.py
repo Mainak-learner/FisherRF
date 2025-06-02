@@ -22,7 +22,7 @@ from torchvision.utils import save_image
 import base64
 import json
 from PIL import Image
-from active.gp_predictor import GPFisherNBVSelector
+from active.gp_predictor import GPFisherNBVSelector, VDGPFisherNBVSelector
 import torchvision.transforms.functional as TF
 from arguments import ModelParams, PipelineParams, OptimizationParams
 
@@ -136,7 +136,10 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
     
     N = len(selected_cams)
     print(f"[Middle Circle] PSNR: {psnr_total/N:.2f}, SSIM: {ssim_total/N:.4f}, LPIPS: {lpips_total/N:.4f}")
-    selector = GPFisherNBVSelector(args, device="cuda")
+    if args.vdgp:
+        selector = VDGPFisherNBVSelector(input_dim=3, device="cuda")
+    else:
+        selector = GPFisherNBVSelector(args, device="cuda")
     sector_selections = []
     sector_init_poses=[]
     for sector_id, sector_indices in sector_map.items():
@@ -190,7 +193,21 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
             final_cam = candidate_cams[torch.argmax(uncertainties)]
             oracle_img = render_with_oracle(final_cam.camera_center, object_center, pipe, oracle_gaussians, background, reference_camera)
             final_cam.original_image = oracle_img.detach().clamp(0.0, 1.0).cuda()
-        elif args.deepgp:
+        elif args.vdgp:
+            center, uv = selector.optimize_gp_posterior_vdgp(
+                proposal_uvs=[all_uvs[i] for i in sector_indices],
+                proposal_centers=[all_centers[i].cpu().numpy() for i in sector_indices],
+                uncertainties=uncertainties,  # should be tensor
+                init_uv=init_pose,
+                uv_bounds=(u_bounds, v_bounds),
+                radius=sample_radius,
+                steps=args.pose_optim_steps,
+                lr=args.pose_lr
+            )
+            # Create DummyCamera for selected pose
+            oracle_img = render_with_oracle(center_opt, object_center, pipe, oracle_gaussians, background, reference_camera)
+            final_cam = DummyCamera(*look_at(center_opt.detach(), object_center.detach()), reference_camera, image=oracle_img.detach())
+        elif args.deepkgp:
             center_opt, uv_opt = selector.optimize_gp_posterior_dkl(
                 proposal_uvs=[all_uvs[i] for i in sector_indices],
                 proposal_centers=[all_centers[i].cpu().numpy() for i in sector_indices],
@@ -355,7 +372,8 @@ if __name__ == "__main__":
     parser.add_argument("--pose_lr", type=float, default=1e-3, help="Learning rate for pose optimization")
     parser.add_argument("--pose_optim_steps", type=float, default=200, help="Number of steps for pose optimization")
     parser.add_argument("--nbv_process", type=str, default="optimization", help="Process of reaching NBV", choices=["optimization", "selection"])
-    parser.add_argument("--deepgp", action="store_true", help="Use Deep GP for uncertainty approximation")
+    parser.add_argument("--deepkgp", action="store_true", help="Use Deep Kernel GP for uncertainty approximation")
+    parser.add_argument("--vdgp", action="store_true", help="Use Variational Deep GP for uncertainty approximation")
     args = parser.parse_args()
 
     wandb.init(project="active", config=vars(args))
