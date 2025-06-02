@@ -141,7 +141,7 @@ class VDGPFisherNBVSelector(Module):
         for i in range(num_steps):
             optimizer.zero_grad()
             loss = loss_fn(self.gp2.model, self.gp2.guide)
-            loss.backward()
+            loss.backward(retain_graph=True)  # Prevent freeing
             optimizer.step()
             if (i+1) % 50 == 0:
                 print(f"Step {i+1}/{num_steps}, Loss: {loss.item():.3f}")
