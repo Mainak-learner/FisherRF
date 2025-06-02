@@ -44,6 +44,54 @@ class VDGPFisherNBVSelector(Module):
         out = self.gp2.model(h)
         return out
     
+    def compute_fisher_uncertainty(self, gaussians, selected_cameras, candidate_cameras, pipe, background):
+        """
+        Computes acquisition scores for each camera pose as the uncertainty estimate.
+        Returns:
+            torch.Tensor of shape (N,) where N is the number of candidate_cameras
+        """
+        params = gaussians.capture()[1:7]
+        params = [p for i, p in enumerate(params) if i not in self.filter_out_idx]
+        device = params[0].device
+
+        H_train = torch.zeros(sum(p.numel() for p in params), device=params[0].device, dtype=params[0].dtype)
+
+        # Use training or test cameras to build H_train
+        viewpoint_cams = selected_cameras
+        for cam in tqdm(viewpoint_cams, desc="Calculating diagonal Hessian on training views"):
+            render_pkg = modified_render(cam, gaussians, pipe, background)
+            pred_img = render_pkg["render"]
+            pred_img.backward(gradient=torch.ones_like(pred_img))
+
+            cur_H = torch.cat([p.grad.detach().reshape(-1) for p in params])
+
+            H_train += cur_H
+
+            gaussians.optimizer.zero_grad(set_to_none = True) 
+
+        H_train = H_train.to(device)
+
+        I_train = torch.reciprocal(H_train + self.reg_lambda)
+        acq_scores = torch.zeros(len(candidate_cameras))
+
+        for idx, cam in enumerate(tqdm(candidate_cameras, desc="Calculating diagonal Hessian on proposal views")):
+
+            render_pkg = modified_render(cam, gaussians, pipe, background)
+            pred_img = render_pkg["render"]
+            pred_img.backward(gradient=torch.ones_like(pred_img))
+
+            cur_H = torch.cat([p.grad.detach().reshape(-1) for p in params])
+
+            I_acq = cur_H
+
+            if self.I_acq_reg:
+                I_acq += self.reg_lambda
+
+            gaussians.optimizer.zero_grad(set_to_none = True) 
+            acq_scores[idx] += torch.sum(I_acq * I_train).item()
+
+        return torch.tensor(acq_scores, device=params[0].device)
+    
     def train_vdgp(self, X_train, y_train, num_steps=500, lr=1e-2):
         X_train = X_train.to(self.device)
         y_train = y_train.to(self.device)
