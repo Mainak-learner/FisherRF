@@ -104,7 +104,7 @@ class VDGPFisherNBVSelector(Module):
         X_train = X_train.to(self.device)
         y_train = y_train.to(self.device)
 
-        # Ensure inducing inputs and kernel params are on the same device
+        # Ensure device consistency
         self.gp1.Xu = self.gp1.Xu.to(self.device)
         self.gp2.Xu = self.gp2.Xu.to(self.device)
         for param in self.gp1.kernel.parameters():
@@ -114,8 +114,8 @@ class VDGPFisherNBVSelector(Module):
 
         # Initialize inducing inputs
         self.gp1.set_data(X=X_train)
-        h = self.gp1.forward(X_train)
-        self.gp2.set_data(X=h, y=y_train)
+        h_mean, _ = self.gp1.forward(X_train)  # Only use mean
+        self.gp2.set_data(X=h_mean, y=y_train)
 
         optimizer = torch.optim.Adam(self.parameters(), lr=lr)
         loss_fn = pyro.infer.TraceELBO().differentiable_loss
@@ -128,6 +128,7 @@ class VDGPFisherNBVSelector(Module):
 
             if (i+1) % 50 == 0:
                 print(f"Step {i+1}/{num_steps}, Loss: {loss.item():.3f}")
+
 
 
     def optimize_gp_posterior_vdgp(self, proposal_uvs, proposal_centers, uncertainties, init_uv, uv_bounds, radius, steps=100, lr=1e-2, beta=2.0):
