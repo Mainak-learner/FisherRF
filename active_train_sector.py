@@ -137,7 +137,7 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
     N = len(selected_cams)
     print(f"[Middle Circle] PSNR: {psnr_total/N:.2f}, SSIM: {ssim_total/N:.4f}, LPIPS: {lpips_total/N:.4f}")
     if args.vdgp:
-        selector = VDGPFisherNBVSelector(input_dim=3, device="cuda")
+        selector = VDGPFisherNBVSelector(args, input_dim=3, device="cuda")
     else:
         selector = GPFisherNBVSelector(args, device="cuda")
     sector_selections = []

@@ -17,10 +17,18 @@ from gpytorch.mlls import ExactMarginalLogLikelihood
 from gpytorch.likelihoods import GaussianLikelihood
 
 class VDGPFisherNBVSelector(Module):
-    def __init__(self, input_dim, hidden_dim=16, num_inducing=32, device="cuda"):
+    def __init__(self, args, input_dim, hidden_dim=16, num_inducing=32, device="cuda"):
         super().__init__()
         self.device = device
         self.input_dim = input_dim
+
+        self.seed = args.seed
+        self.reg_lambda = args.reg_lambda
+        self.I_test: bool = args.I_test
+        self.I_acq_reg: bool = args.I_acq_reg
+
+        name2idx = {"xyz": 0, "rgb": 1, "sh": 2, "scale": 3, "rotation": 4, "opacity": 5}
+        self.filter_out_idx: List[str] = [name2idx[k] for k in args.filter_out_grad]
 
         # 2-layer Deep GP
         self.gp1 = gp.models.VariationalSparseGP(
