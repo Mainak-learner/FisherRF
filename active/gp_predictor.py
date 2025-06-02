@@ -130,6 +130,8 @@ class VDGPFisherNBVSelector(Module):
         # Project to hidden_dim
         h_latent = self.projection(h_mean.unsqueeze(-1))  # (N, hidden_dim)
 
+        print("h_latent shape:", h_latent.shape)
+        print("y_train shape:", y_train.shape)
         # 2nd GP training
         self.gp2.set_data(X=h_latent, y=y_train)
         optimizer = torch.optim.Adam(self.parameters(), lr=lr)
