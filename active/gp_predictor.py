@@ -106,7 +106,7 @@ class VDGPFisherNBVSelector(Module):
 
         # Initialize inducing inputs
         self.gp1.set_data(X=X_train)
-        h = self.gp1.model(X_train)
+        h = self.gp1.forward(X_train)
         self.gp2.set_data(X=h, y=y_train)
 
         optimizer = torch.optim.Adam(self.parameters(), lr=lr)
@@ -133,10 +133,8 @@ class VDGPFisherNBVSelector(Module):
         X_train = torch.tensor(proposal_centers, dtype=torch.float32, device=device)
         y_train = uncertainties.to(device).squeeze()
 
-        # Train the VDGP
         self.train_vdgp(X_train, y_train)
 
-        # Initialize UV for optimization
         u = torch.tensor([init_uv[0]], device=device, dtype=torch.float32, requires_grad=True)
         v = torch.tensor([init_uv[1]], device=device, dtype=torch.float32, requires_grad=True)
         uv_optimizer = torch.optim.Adam([u, v], lr=lr)
@@ -144,21 +142,18 @@ class VDGPFisherNBVSelector(Module):
         for _ in range(steps):
             uv_optimizer.zero_grad()
 
-            # Convert (u, v) to camera center
             cam_center = uv2car_torch(u, v) * radius  # (1, 3)
 
-            # Predict using the VDGP
+            # Predict with VDGP
             with torch.no_grad():
-                h_star = self.gp1.model(cam_center)
-                mean, var = self.gp2.model(h_star, full_cov=False)
+                h_star = self.gp1.forward(cam_center)
+                mean, var = self.gp2.forward(h_star, full_cov=False)
 
-            # UCB acquisition
             acquisition = mean + beta * var.sqrt()
             loss = -acquisition
             loss.backward()
             uv_optimizer.step()
 
-            # Clamp u and v
             u.data.clamp_(u_min, u_max)
             v.data.clamp_(v_min, v_max)
 
