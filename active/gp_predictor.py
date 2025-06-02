@@ -134,6 +134,7 @@ class VDGPFisherNBVSelector(Module):
         print("y_train shape:", y_train.shape)
         # 2nd GP training
         self.gp2.set_data(X=h_latent, y=y_train)
+        self.gp2.num_data = y_train.size(0)  # Ensure it’s set!
         optimizer = torch.optim.Adam(self.parameters(), lr=lr)
         loss_fn = pyro.infer.Trace_ELBO().differentiable_loss
 
