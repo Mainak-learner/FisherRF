@@ -146,7 +146,7 @@ class VDGPFisherNBVSelector(Module):
         with torch.no_grad():
             self.gp2.set_data(X=h2_input)
             h2_mean, _ = self.gp2.forward(h2_input)
-            h3_input = self.projection2(h2_mean).detach()
+            h3_input = self.projection2(h2_mean.unsqueeze(-1)).detach()
 
         self.gp3.set_data(X=h3_input, y=y_train)
         self.gp3.num_data = y_train.size(0)
