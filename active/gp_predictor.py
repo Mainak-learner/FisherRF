@@ -136,18 +136,19 @@ class VDGPFisherNBVSelector(Module):
         self.gp2.set_data(X=h_latent, y=y_train)
         self.gp2.num_data = y_train.size(0)  # Ensure it’s set!
         optimizer = torch.optim.Adam(self.parameters(), lr=lr)
-        loss_fn = pyro.infer.Trace_ELBO().differentiable_loss
 
         torch.autograd.set_detect_anomaly(True)
+        loss_fn = pyro.infer.Trace_ELBO().differentiable_loss
         for i in range(num_steps):
             optimizer.zero_grad()
-
-            # Rebuild the loss in this iteration
-            loss = pyro.infer.Trace_ELBO().differentiable_loss(self.gp2.model, self.gp2.guide)
-            
-            loss.backward()  # No retain_graph!
+            loss = loss_fn(self.gp2.model, self.gp2.guide)
+            loss.backward(retain_graph=False)
             optimizer.step()
             
+            # Clear the Pyro GP cache
+            self.gp2.model.__call__.clear_cache()
+            self.gp2.guide.__call__.clear_cache()
+
             if (i+1) % 50 == 0:
                 print(f"Step {i+1}/{num_steps}, Loss: {loss.item():.3f}")
 
