@@ -140,15 +140,16 @@ class VDGPFisherNBVSelector(Module):
                 print(f"Step {i+1}/{num_steps}, Loss: {loss:.3f}")
 
 
-
-
     def optimize_gp_posterior_vdgp(self, proposal_uvs, proposal_centers, uncertainties, init_uv, uv_bounds, radius, steps=100, lr=1e-2, beta=2.0):
         device = self.device
         u_min, u_max = uv_bounds[0]
         v_min, v_max = uv_bounds[1]
 
-        X_train = torch.tensor(np.array(proposal_centers), dtype=torch.float32, device=device)
+        # Normalize uncertainties for stability
         y_train = uncertainties.to(device).squeeze()
+        y_train = (y_train - y_train.mean()) / (y_train.std() + 1e-6)
+
+        X_train = torch.tensor(np.array(proposal_centers), dtype=torch.float32, device=device)
 
         self.train_vdgp(X_train, y_train)
 
@@ -160,10 +161,12 @@ class VDGPFisherNBVSelector(Module):
             uv_optimizer.zero_grad()
             cam_center = uv2car_torch(u, v) * radius  # (1, 3)
 
+            # 1st GP + projection in no_grad
             with torch.no_grad():
                 h_mean, _ = self.gp1.forward(cam_center)  # (1, 1)
                 h_latent = self.projection(h_mean.unsqueeze(-1))  # (1, hidden_dim)
-            # Outside no_grad to compute gradients!
+
+            # 2nd GP with grad tracking
             mean, var = self.gp2.forward(h_latent, full_cov=False)
 
             acquisition = mean + beta * var.sqrt()
