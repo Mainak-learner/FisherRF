@@ -182,15 +182,15 @@ class VDGPFisherNBVSelector(Module):
             uv_optimizer.zero_grad()
             cam_center = uv2car_torch(u, v) * radius  # (1, 3)
 
-        # 1st GP + projections
-        with torch.no_grad():
-            h1_mean, _ = self.gp1.forward(cam_center)        # (1, 1)
-            h2_input = self.projection(h1_mean.unsqueeze(-1))  # (1, hidden_dim)
-            h2_mean, _ = self.gp2.forward(h2_input)
-            h3_input = self.projection2(h2_mean)
+            # 1st GP + projections
+            with torch.no_grad():
+                h1_mean, _ = self.gp1.forward(cam_center)        # (1, 1)
+                h2_input = self.projection(h1_mean.unsqueeze(-1))  # (1, hidden_dim)
+                h2_mean, _ = self.gp2.forward(h2_input)
+                h3_input = self.projection2(h2_mean)
 
-        # Final GP
-        mean, var = self.gp3.forward(h3_input, full_cov=False)
+            # Final GP
+            mean, var = self.gp3.forward(h3_input, full_cov=False)
 
             acquisition = mean + beta * var.sqrt()
             loss = -acquisition
