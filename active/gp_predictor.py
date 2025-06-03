@@ -60,7 +60,7 @@ class VDGPFisherNBVSelector(Module):
 
         # 2nd projection: hidden_dim → hidden_dim
         self.projection2 = nn.Sequential(
-            nn.Linear(hidden_dim, hidden_dim),
+            nn.Linear(1, hidden_dim),
             nn.ReLU(),
             nn.Linear(hidden_dim, hidden_dim),
         ).to(device)
