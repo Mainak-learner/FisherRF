@@ -49,13 +49,13 @@ class VDGPFisherNBVSelector(Module):
             nn.Linear(hidden_dim, hidden_dim),
         ).to(device)
 
-        # 2nd GP: hidden_dim → uncertainty
+        # Example: gp2 outputs [N, 16] latent vector
         self.gp2 = gp.models.VariationalSparseGP(
             X=torch.empty(0, hidden_dim).to(device),
             y=None,
             kernel=gp.kernels.RBF(hidden_dim),
             Xu=torch.randn(num_inducing, hidden_dim).to(device),
-            likelihood=gp.likelihoods.Gaussian()
+            likelihood=None
         )
 
         # 2nd projection: hidden_dim → hidden_dim
