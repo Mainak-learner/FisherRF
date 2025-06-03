@@ -369,7 +369,7 @@ if __name__ == "__main__":
     parser.add_argument("--filter_out_grad", nargs="+", type=str, default=["rotation"])
     parser.add_argument("--num_circles", type=int, default=5, help="Number of circles on the view-hemisphere, that contains proposal poses")
     parser.add_argument("--min_poses", type=int, default=30, help="Number of proposal poses on the smallest circle")
-    parser.add_argument("--pose_lr", type=float, default=1e-3, help="Learning rate for pose optimization")
+    parser.add_argument("--pose_lr", type=float, default=1e-4, help="Learning rate for pose optimization")
     parser.add_argument("--pose_optim_steps", type=float, default=200, help="Number of steps for pose optimization")
     parser.add_argument("--nbv_process", type=str, default="optimization", help="Process of reaching NBV", choices=["optimization", "selection"])
     parser.add_argument("--deepkgp", action="store_true", help="Use Deep Kernel GP for uncertainty approximation")
