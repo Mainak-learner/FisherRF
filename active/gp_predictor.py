@@ -152,7 +152,7 @@ class VDGPFisherNBVSelector(Module):
         self.gp3.num_data = y_train.size(0)
 
         optimizer = pyro.optim.Adam({"lr": lr})
-        elbo = pyro.infer.Trace_ELBO(num_particles=5)
+        elbo = pyro.infer.Trace_ELBO()
         svi = pyro.infer.SVI(self.gp3.model, self.gp3.guide, optimizer, elbo)
 
         for i in range(num_steps):
