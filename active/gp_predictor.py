@@ -190,8 +190,10 @@ class VDGPFisherNBVSelector(Module):
                 h3_input = self.projection2(h2_mean)
 
             # Final GP
+            if h3_input.ndim == 1:
+                h3_input = h3_input.unsqueeze(0)
             mean, var = self.gp3.forward(h3_input, full_cov=False)
-
+            
             acquisition = mean + beta * var.sqrt()
             loss = -acquisition
             loss.backward()
