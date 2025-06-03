@@ -19,7 +19,7 @@ from gpytorch.mlls import ExactMarginalLogLikelihood
 from gpytorch.likelihoods import GaussianLikelihood
 
 class VDGPFisherNBVSelector(Module):
-    def __init__(self, args, input_dim, hidden_dim=32, num_inducing=32, device="cuda"):
+    def __init__(self, args, input_dim, hidden_dim=32, num_inducing=128, device="cuda"):
         super().__init__()
         self.device = device
         self.input_dim = input_dim
@@ -111,7 +111,7 @@ class VDGPFisherNBVSelector(Module):
 
         return torch.tensor(acq_scores, device=params[0].device)
     
-    def train_vdgp(self, X_train, y_train, num_steps=500, lr=1e-2):
+    def train_vdgp(self, X_train, y_train, num_steps=500, lr=1e-4):
         X_train = X_train.to(self.device)
         y_train = y_train.to(self.device)
 
@@ -131,7 +131,7 @@ class VDGPFisherNBVSelector(Module):
         self.gp2.num_data = y_train.size(0)
 
         optimizer = pyro.optim.Adam({"lr": lr})
-        elbo = pyro.infer.Trace_ELBO()
+        elbo = pyro.infer.Trace_ELBO(num_particles=5)
         svi = pyro.infer.SVI(self.gp2.model, self.gp2.guide, optimizer, elbo)
 
         for i in range(num_steps):
