@@ -123,26 +123,22 @@ class VDGPFisherNBVSelector(Module):
         for param in self.gp2.kernel.parameters():
             param.data = param.data.to(self.device)
 
-        # 1st GP prediction
         self.gp1.set_data(X=X_train)
-        h_mean, _ = self.gp1.forward(X_train)  # (N, 1)
+        h_mean, _ = self.gp1.forward(X_train)
+        h_latent = self.projection(h_mean.unsqueeze(-1))
 
-        # Project to hidden_dim
-        h_latent = self.projection(h_mean.unsqueeze(-1))  # (N, hidden_dim)
-
-        # 2nd GP training
         self.gp2.set_data(X=h_latent, y=y_train)
-        self.gp2.num_data = y_train.size(0)  # Fix for Pyro scaling
+        self.gp2.num_data = y_train.size(0)
 
-        optimizer = torch.optim.Adam(self.parameters(), lr=lr)
-        loss_fn = pyro.infer.Trace_ELBO().differentiable_loss
+        # Pyro’s built-in SVI loop
+        optimizer = pyro.optim.Adam({"lr": lr})
+        elbo = pyro.infer.Trace_ELBO()
+        svi = pyro.infer.SVI(self.gp2.model, self.gp2.guide, optimizer, elbo)
+
         for i in range(num_steps):
-            optimizer.zero_grad()
-            loss = loss_fn(self.gp2.model, self.gp2.guide)
-            loss.backward()  # No retain_graph!
-            optimizer.step()
+            loss = svi.step()
             if (i+1) % 50 == 0:
-                print(f"Step {i+1}/{num_steps}, Loss: {loss.item():.3f}")
+                print(f"Step {i+1}/{num_steps}, Loss: {loss:.3f}")
 
 
 
