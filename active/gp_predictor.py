@@ -19,7 +19,7 @@ from gpytorch.mlls import ExactMarginalLogLikelihood
 from gpytorch.likelihoods import GaussianLikelihood
 
 class VDGPFisherNBVSelector(Module):
-    def __init__(self, args, input_dim, hidden_dim=16, num_inducing=32, device="cuda"):
+    def __init__(self, args, input_dim, hidden_dim=32, num_inducing=32, device="cuda"):
         super().__init__()
         self.device = device
         self.input_dim = input_dim
