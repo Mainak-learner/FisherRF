@@ -160,11 +160,11 @@ class VDGPFisherNBVSelector(Module):
             uv_optimizer.zero_grad()
             cam_center = uv2car_torch(u, v) * radius  # (1, 3)
 
-            # 1st GP prediction
             with torch.no_grad():
                 h_mean, _ = self.gp1.forward(cam_center)  # (1, 1)
                 h_latent = self.projection(h_mean.unsqueeze(-1))  # (1, hidden_dim)
-                mean, var = self.gp2.forward(h_latent, full_cov=False)
+            # Outside no_grad to compute gradients!
+            mean, var = self.gp2.forward(h_latent, full_cov=False)
 
             acquisition = mean + beta * var.sqrt()
             loss = -acquisition
