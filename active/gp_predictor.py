@@ -58,6 +58,22 @@ class VDGPFisherNBVSelector(Module):
             likelihood=gp.likelihoods.Gaussian()
         )
 
+        # 2nd projection: hidden_dim → hidden_dim
+        self.projection2 = nn.Sequential(
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim),
+        ).to(device)
+
+        # 3rd GP: hidden_dim → uncertainty
+        self.gp3 = gp.models.VariationalSparseGP(
+            X=torch.empty(0, hidden_dim).to(device),
+            y=None,
+            kernel=gp.kernels.RBF(hidden_dim),
+            Xu=torch.randn(num_inducing, hidden_dim).to(device),
+            likelihood=gp.likelihoods.Gaussian()
+        )
+
     def forward(self, x):
         h = self.gp1.model(x)
         out = self.gp2.model(h)
@@ -115,24 +131,29 @@ class VDGPFisherNBVSelector(Module):
         X_train = X_train.to(self.device)
         y_train = y_train.to(self.device)
 
-        self.gp1.Xu = self.gp1.Xu.to(self.device)
-        self.gp2.Xu = self.gp2.Xu.to(self.device)
-        for param in self.gp1.kernel.parameters():
-            param.data = param.data.to(self.device)
-        for param in self.gp2.kernel.parameters():
-            param.data = param.data.to(self.device)
+        for model in [self.gp1, self.gp2, self.gp3]:
+            model.Xu = model.Xu.to(self.device)
+            for param in model.kernel.parameters():
+                param.data = param.data.to(self.device)
 
+        # Layer 1
         with torch.no_grad():
             self.gp1.set_data(X=X_train)
-            h_mean, _ = self.gp1.forward(X_train)
-            h_latent = self.projection(h_mean.unsqueeze(-1)).detach()
+            h1_mean, _ = self.gp1.forward(X_train)
+            h2_input = self.projection(h1_mean.unsqueeze(-1)).detach()
 
-        self.gp2.set_data(X=h_latent, y=y_train)
-        self.gp2.num_data = y_train.size(0)
+        # Layer 2
+        with torch.no_grad():
+            self.gp2.set_data(X=h2_input)
+            h2_mean, _ = self.gp2.forward(h2_input)
+            h3_input = self.projection2(h2_mean).detach()
+
+        self.gp3.set_data(X=h3_input, y=y_train)
+        self.gp3.num_data = y_train.size(0)
 
         optimizer = pyro.optim.Adam({"lr": lr})
-        elbo = pyro.infer.Trace_ELBO(num_particles=10)
-        svi = pyro.infer.SVI(self.gp2.model, self.gp2.guide, optimizer, elbo)
+        elbo = pyro.infer.Trace_ELBO(num_particles=5)
+        svi = pyro.infer.SVI(self.gp3.model, self.gp3.guide, optimizer, elbo)
 
         for i in range(num_steps):
             loss = svi.step()
@@ -161,13 +182,15 @@ class VDGPFisherNBVSelector(Module):
             uv_optimizer.zero_grad()
             cam_center = uv2car_torch(u, v) * radius  # (1, 3)
 
-            # 1st GP + projection in no_grad
-            with torch.no_grad():
-                h_mean, _ = self.gp1.forward(cam_center)  # (1, 1)
-                h_latent = self.projection(h_mean.unsqueeze(-1))  # (1, hidden_dim)
+        # 1st GP + projections
+        with torch.no_grad():
+            h1_mean, _ = self.gp1.forward(cam_center)        # (1, 1)
+            h2_input = self.projection(h1_mean.unsqueeze(-1))  # (1, hidden_dim)
+            h2_mean, _ = self.gp2.forward(h2_input)
+            h3_input = self.projection2(h2_mean)
 
-            # 2nd GP with grad tracking
-            mean, var = self.gp2.forward(h_latent, full_cov=False)
+        # Final GP
+        mean, var = self.gp3.forward(h3_input, full_cov=False)
 
             acquisition = mean + beta * var.sqrt()
             loss = -acquisition
