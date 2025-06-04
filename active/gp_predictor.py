@@ -97,7 +97,8 @@ class VDGPFisherNBVSelector(Module):
         h2_mean = torch.cat(h2_list, dim=-1)
         h3_input = self.projection2(h2_mean)
 
-        return self.gp3.guide(h3_input)
+        self.gp3.set_data(X=h3_input, y=self.y_train)
+        return self.gp3.guide()
     
     def compute_fisher_uncertainty(self, gaussians, selected_cameras, candidate_cameras, pipe, background):
         """
