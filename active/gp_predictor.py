@@ -76,22 +76,33 @@ class VDGPFisherNBVSelector(Module):
     def model(self):
         pyro.module("gp3", self.gp3)
 
-        # Forward all the way to h3_input using saved inputs
-        h1_list = [self.gp1.forward(self.X_train_5d)[0].unsqueeze(-1) for _ in range(self.latent_dim1)]
-        h1_mean = torch.cat(h1_list, dim=-1)
+        # Reconstruct 5D input: (3D cam centers + 2D look dirs)
+        look_dirs = F.normalize(self.object_center.unsqueeze(0) - self.X_train, dim=-1)  # [N, 3]
+        X_train_5d = torch.cat([self.X_train, look_dirs[:, :2]], dim=-1)  # [N, 5]
+
+        # GP1 forward
+        h1_list = [self.gp1.forward(X_train_5d)[0].unsqueeze(-1) for _ in range(self.latent_dim1)]
+        h1_mean = torch.cat(h1_list, dim=-1)  # [N, latent_dim1]
         h2_input = self.projection(h1_mean)
 
+        # GP2 forward
         h2_list = [self.gp2.forward(h2_input)[0].unsqueeze(-1) for _ in range(self.latent_dim2)]
-        h2_mean = torch.cat(h2_list, dim=-1)
+        h2_mean = torch.cat(h2_list, dim=-1)  # [N, latent_dim2]
         h3_input = self.projection2(h2_mean)
 
         return self.gp3.model(h3_input, self.y_train)
 
     def guide(self):
-        h1_list = [self.gp1.forward(self.X_train_5d)[0].unsqueeze(-1) for _ in range(self.latent_dim1)]
+        # Reconstruct 5D input
+        look_dirs = F.normalize(self.object_center.unsqueeze(0) - self.X_train, dim=-1)
+        X_train_5d = torch.cat([self.X_train, look_dirs[:, :2]], dim=-1)
+
+        # GP1 forward
+        h1_list = [self.gp1.forward(X_train_5d)[0].unsqueeze(-1) for _ in range(self.latent_dim1)]
         h1_mean = torch.cat(h1_list, dim=-1)
         h2_input = self.projection(h1_mean)
 
+        # GP2 forward
         h2_list = [self.gp2.forward(h2_input)[0].unsqueeze(-1) for _ in range(self.latent_dim2)]
         h2_mean = torch.cat(h2_list, dim=-1)
         h3_input = self.projection2(h2_mean)
@@ -153,8 +164,9 @@ class VDGPFisherNBVSelector(Module):
         look_dirs = F.normalize(object_center.unsqueeze(0) - X_train, dim=-1)
         X_train_5d = torch.cat([X_train, look_dirs[:, :2]], dim=-1)
 
-        self.X_train_5d = X_train_5d
+        self.X_train = X_train
         self.y_train = y_train
+        self.object_center = object_center
 
         for model in [self.gp1, self.gp2, self.gp3]:
             model.Xu = model.Xu.to(self.device)
