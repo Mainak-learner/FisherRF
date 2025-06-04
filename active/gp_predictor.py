@@ -84,7 +84,7 @@ class VDGPFisherNBVSelector(Module):
         h2_mean = torch.cat(h2_list, dim=-1)
         h3_input = self.projection2(h2_mean)
 
-        return self.gp3.model(h3_input, self.y_train)
+        return self.gp3.model()
     
     def guide(self):
         h1_list = [self.gp1.forward(self.X_train)[0].unsqueeze(-1) for _ in range(self.latent_dim1)]
