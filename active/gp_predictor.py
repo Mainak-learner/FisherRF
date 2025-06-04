@@ -20,7 +20,7 @@ from gpytorch.likelihoods import GaussianLikelihood
 import torch.nn.functional as F
 
 class VDGPFisherNBVSelector(Module):
-    def __init__(self, args, input_dim=5, hidden_dim=32, num_inducing=128, device="cuda"):
+    def __init__(self, args, input_dim=3, hidden_dim=32, num_inducing=128, device="cuda"):
         super().__init__()
         self.device = device
         self.input_dim = input_dim
@@ -107,7 +107,7 @@ class VDGPFisherNBVSelector(Module):
         h2_mean = torch.cat(h2_list, dim=-1)
         h3_input = self.projection2(h2_mean)
 
-        return self.gp3.guide(h3_input, self.y_train)
+        return self.gp3.guide()
     
     def compute_fisher_uncertainty(self, gaussians, selected_cameras, candidate_cameras, pipe, background):
         """
