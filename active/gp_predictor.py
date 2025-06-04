@@ -19,6 +19,42 @@ from gpytorch.mlls import ExactMarginalLogLikelihood
 from gpytorch.likelihoods import GaussianLikelihood
 import torch.nn.functional as F
 
+class VDGPModel(nn.Module):
+    def __init__(self, selector):
+        super().__init__()
+        self.selector = selector
+
+    def forward(self, X, y):
+        pyro.module("gp1", self.selector.gp1)
+        pyro.module("gp2", self.selector.gp2)
+        pyro.module("gp3", self.selector.gp3)
+
+        h1 = torch.cat([
+            self.selector.gp1(X)[0].unsqueeze(-1)
+            for _ in range(self.selector.latent_dim1)
+        ], dim=-1)
+        h2_input = self.selector.projection(h1)
+
+        h2 = torch.cat([
+            self.selector.gp2(h2_input)[0].unsqueeze(-1)
+            for _ in range(self.selector.latent_dim2)
+        ], dim=-1)
+        h3_input = self.selector.projection2(h2)
+
+        self.selector.gp3.set_data(X=h3_input, y=y)
+        self.selector.gp3.model()
+
+
+class VDGPGuide(nn.Module):
+    def __init__(self, selector):
+        super().__init__()
+        self.selector = selector
+
+    def forward(self, X, y):
+        self.selector.gp1.guide()
+        self.selector.gp2.guide()
+        self.selector.gp3.guide()
+
 class VDGPFisherNBVSelector(Module):
     def __init__(self, args, input_dim, hidden_dim=32, num_inducing=128, device="cuda"):
         super().__init__()
@@ -28,32 +64,29 @@ class VDGPFisherNBVSelector(Module):
 
         self.seed = args.seed
         self.reg_lambda = args.reg_lambda
-        self.I_test: bool = args.I_test
-        self.I_acq_reg: bool = args.I_acq_reg
+        self.I_test = args.I_test
+        self.I_acq_reg = args.I_acq_reg
 
         name2idx = {"xyz": 0, "rgb": 1, "sh": 2, "scale": 3, "rotation": 4, "opacity": 5}
-        self.filter_out_idx: List[str] = [name2idx[k] for k in args.filter_out_grad]
+        self.filter_out_idx = [name2idx[k] for k in args.filter_out_grad]
 
-        self.latent_dim1 = 8  # or 16
+        self.latent_dim1 = 8
+        self.latent_dim2 = 16
 
-        # 1st GP: 3D → 1D latent
         self.gp1 = gp.models.VariationalSparseGP(
-            X=torch.empty(0, input_dim).to(device),
+            X=torch.empty(0, self.input_dim).to(device),
             y=None,
-            kernel=gp.kernels.RBF(input_dim),
-            Xu=torch.randn(num_inducing, input_dim).to(device),
+            kernel=gp.kernels.RBF(self.input_dim),
+            Xu=torch.randn(num_inducing, self.input_dim).to(device),
             likelihood=None
         )
 
-        # Projection MLP: 1D → hidden_dim
         self.projection = nn.Sequential(
             nn.Linear(self.latent_dim1, hidden_dim),
             nn.ReLU(),
             nn.Linear(hidden_dim, hidden_dim)
         ).to(device)
 
-        self.latent_dim2 = 16
-        # Example: gp2 outputs [N, 16] latent vector
         self.gp2 = gp.models.VariationalSparseGP(
             X=torch.empty(0, hidden_dim).to(device),
             y=None,
@@ -62,14 +95,12 @@ class VDGPFisherNBVSelector(Module):
             likelihood=None
         )
 
-        # 2nd projection: hidden_dim → hidden_dim
         self.projection2 = nn.Sequential(
             nn.Linear(self.latent_dim2, hidden_dim),
             nn.ReLU(),
             nn.Linear(hidden_dim, hidden_dim),
         ).to(device)
 
-        # 3rd GP: hidden_dim → uncertainty
         self.gp3 = gp.models.VariationalSparseGP(
             X=torch.empty(0, hidden_dim).to(device),
             y=None,
@@ -77,11 +108,6 @@ class VDGPFisherNBVSelector(Module):
             Xu=torch.randn(num_inducing, hidden_dim).to(device),
             likelihood=gp.likelihoods.Gaussian()
         )
-
-    def forward(self, x):
-        h = self.gp1.model(x)
-        out = self.gp2.model(h)
-        return out
     
     def compute_fisher_uncertainty(self, gaussians, selected_cameras, candidate_cameras, pipe, background):
         """
@@ -134,57 +160,34 @@ class VDGPFisherNBVSelector(Module):
     def train_vdgp(self, X_train, y_train, object_center, num_steps=500, lr=1e-4):
         X_train = X_train.to(self.device)
         y_train = y_train.to(self.device)
+        look_dirs = F.normalize(object_center.unsqueeze(0) - X_train, dim=-1)
+        X_train = torch.cat([X_train, look_dirs[:, :2]], dim=-1)
 
         for model in [self.gp1, self.gp2, self.gp3]:
             model.Xu = model.Xu.to(self.device)
-            for param in model.kernel.parameters():
-                param.data = param.data.to(self.device)
+            for p in model.kernel.parameters():
+                p.data = p.data.to(self.device)
 
-        # Layer 1: GP1 + projection
-        look_dirs = F.normalize(object_center.unsqueeze(0) - X_train, dim=-1)  # [N, 3]
-        X_train_5d = torch.cat([X_train, look_dirs[:, :2]], dim=-1)  # [N, 5]
-        self.gp1.set_data(X=X_train_5d)
+        self.gp1.set_data(X=X_train)
 
-        h1_list = []
-        for _ in range(self.latent_dim1):
-            h1, _ = self.gp1.forward(X_train_5d)
-            h1_list.append(h1.unsqueeze(-1))
-        h1_mean = torch.cat(h1_list, dim=-1)  # [N, latent_dim1]
-        h2_input = self.projection(h1_mean)   # [N, hidden_dim]
-
-        # Layer 2: GP2 + projection2
-        self.gp2.set_data(X=h2_input)
-        h2_list = []
-        for _ in range(self.latent_dim2):
-            h2, _ = self.gp2.forward(h2_input)
-            h2_list.append(h2.unsqueeze(-1))
-        h2_mean = torch.cat(h2_list, dim=-1)  # [N, latent_dim2]
-        h3_input = self.projection2(h2_mean)  # [N, hidden_dim]
-
-        # Final GP3
-        self.gp3.set_data(X=h3_input, y=y_train)
-        self.gp3.num_data = y_train.size(0)
+        model = VDGPModel(self)
+        guide = VDGPGuide(self)
 
         optimizer = pyro.optim.Adam({"lr": lr})
-        elbo = pyro.infer.Trace_ELBO()
-        svi = pyro.infer.SVI(self.gp3.model, self.gp3.guide, optimizer, elbo)
+        svi = pyro.infer.SVI(model, guide, optimizer, loss=pyro.infer.Trace_ELBO())
 
         for i in range(num_steps):
-            loss = svi.step()
+            loss = svi.step(X_train, y_train)
             if (i + 1) % 50 == 0:
-                print(f"Step {i+1}/{num_steps}, Loss: {loss:.3f}")
-
-
+                print(f"[VDGP] Step {i+1}/{num_steps}, Loss: {loss:.4f}")
 
     def optimize_gp_posterior_vdgp(self, proposal_uvs, proposal_centers, uncertainties, init_uv, uv_bounds, radius, object_center, steps=100, lr=1e-2, beta=2.0):
         device = self.device
         u_min, u_max = uv_bounds[0]
         v_min, v_max = uv_bounds[1]
 
-        # Normalize uncertainties
         y_train = uncertainties.to(device).squeeze()
         y_train = (y_train - y_train.mean()) / (y_train.std() + 1e-6)
-
         X_train = torch.tensor(np.array(proposal_centers), dtype=torch.float32, device=device)
 
         self.train_vdgp(X_train, y_train, object_center)
@@ -195,37 +198,26 @@ class VDGPFisherNBVSelector(Module):
 
         for _ in range(steps):
             uv_optimizer.zero_grad()
-            cam_center = uv2car_torch(u, v) * radius  # (1, 3)
+            cam_center = uv2car_torch(u, v) * radius
+            look_dir = F.normalize(object_center - cam_center.squeeze(0), dim=-1)
+            cam_input = torch.cat([cam_center, look_dir[:2].unsqueeze(0)], dim=-1)
 
-            # Construct 5D input: [x, y, z, look_x, look_y]
-            look_dir = F.normalize(object_center - cam_center.squeeze(0), dim=-1)  # (3,)
-            cam_input = torch.cat([cam_center, look_dir[:2].unsqueeze(0)], dim=-1)  # (1, 5)
-
-            with torch.no_grad():
-                # GP1 forward
-                h1_mean_list = []
-                for _ in range(self.latent_dim1):
-                    h1_mean, _ = self.gp1.forward(cam_input)
-                    h1_mean_list.append(h1_mean.unsqueeze(-1))
-                h1_mean = torch.cat(h1_mean_list, dim=-1)  # [1, latent_dim1]
-
-                h2_input = self.projection(h1_mean)  # [1, hidden_dim]
-
-                # GP2 forward
-                h2_mean_list = []
-                for _ in range(self.latent_dim2):
-                    h2_mean, _ = self.gp2.forward(h2_input)
-                    h2_mean_list.append(h2_mean.unsqueeze(-1))
-                h2_mean = torch.cat(h2_mean_list, dim=-1)  # [1, latent_dim2]
-
-                h3_input = self.projection2(h2_mean)  # [1, hidden_dim]
+            h1 = torch.cat([
+                self.gp1(cam_input)[0].unsqueeze(-1)
+                for _ in range(self.latent_dim1)
+            ], dim=-1)
+            h2_input = self.projection(h1)
+            h2 = torch.cat([
+                self.gp2(h2_input)[0].unsqueeze(-1)
+                for _ in range(self.latent_dim2)
+            ], dim=-1)
+            h3_input = self.projection2(h2)
 
             if h3_input.ndim == 1:
                 h3_input = h3_input.unsqueeze(0)
 
             mean, var = self.gp3.forward(h3_input, full_cov=False)
-            acquisition = mean + beta * var.sqrt()
-            loss = -acquisition
+            loss = -(mean + beta * var.sqrt())
             loss.backward()
             uv_optimizer.step()
 
