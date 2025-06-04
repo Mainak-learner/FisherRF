@@ -149,11 +149,14 @@ class VDGPFisherNBVSelector(Module):
             h1_mean = torch.cat(h1_list, dim=-1)  # [N, latent_dim1]
             h2_input = self.projection(h1_mean)   # [N, hidden_dim]
 
-        # Layer 2: GP2 → latent_dim2
         with torch.no_grad():
             self.gp2.set_data(X=h2_input)
-            h2_mean, _ = self.gp2.forward(h2_input)  # [N, latent_dim2]
-            h3_input = self.projection2(h2_mean.unsqueeze(-1)).detach()  # [N, hidden_dim]
+            h2_list = []
+            for _ in range(self.latent_dim2):
+                h2, _ = self.gp2.forward(h2_input)  # fake multi-output
+                h2_list.append(h2.unsqueeze(-1))
+            h2_mean = torch.cat(h2_list, dim=-1)  # [N, latent_dim2]
+            h3_input = self.projection2(h2_mean).detach()  # [N, hidden_dim]
 
         # Layer 3: GP3 → scalar uncertainty
         self.gp3.set_data(X=h3_input, y=y_train)
