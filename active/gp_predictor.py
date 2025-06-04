@@ -131,7 +131,7 @@ class VDGPFisherNBVSelector(Module):
 
         return torch.tensor(acq_scores, device=params[0].device)
     
-    def train_vdgp(self, X_train, y_train, num_steps=500, lr=1e-4):
+    def train_vdgp(self, X_train, y_train, object_center, num_steps=500, lr=1e-4):
         X_train = X_train.to(self.device)
         y_train = y_train.to(self.device)
 
@@ -141,7 +141,7 @@ class VDGPFisherNBVSelector(Module):
                 param.data = param.data.to(self.device)
 
         # Layer 1: GP1 + projection
-        look_dirs = F.normalize(self.object_center.unsqueeze(0) - X_train, dim=-1)  # [N, 3]
+        look_dirs = F.normalize(object_center.unsqueeze(0) - X_train, dim=-1)  # [N, 3]
         X_train_5d = torch.cat([X_train, look_dirs[:, :2]], dim=-1)  # [N, 5]
         self.gp1.set_data(X=X_train_5d)
 
