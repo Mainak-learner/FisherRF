@@ -22,7 +22,7 @@ class VDGPFisherNBVSelector(Module):
     def __init__(self, args, input_dim, hidden_dim=32, num_inducing=128, device="cuda"):
         super().__init__()
         self.device = device
-        self.input_dim = input_dim
+        self.input_dim = 5
         self.hidden_dim = hidden_dim
 
         self.seed = args.seed
@@ -130,21 +130,24 @@ class VDGPFisherNBVSelector(Module):
 
         return torch.tensor(acq_scores, device=params[0].device)
     
-    def train_vdgp(self, X_train, y_train, num_steps=500, lr=1e-4):
+    def train_vdgp(self, X_train, y_train, object_center, num_steps=500, lr=1e-4):
         X_train = X_train.to(self.device)
         y_train = y_train.to(self.device)
+        object_center = object_center.to(self.device)
 
         for model in [self.gp1, self.gp2, self.gp3]:
             model.Xu = model.Xu.to(self.device)
             for param in model.kernel.parameters():
                 param.data = param.data.to(self.device)
 
-        # Layer 1: GP1 → latent_dim1
+        # Construct 5D input: [x, y, z, look_x, look_y]
         with torch.no_grad():
-            self.gp1.set_data(X=X_train)
+            look_dirs = F.normalize(object_center.unsqueeze(0) - X_train, dim=-1)  # [N, 3]
+            X_train_5d = torch.cat([X_train, look_dirs[:, :2]], dim=-1)  # [N, 5]
+            self.gp1.set_data(X=X_train_5d)
             h1_list = []
             for _ in range(self.latent_dim1):
-                h1, _ = self.gp1.forward(X_train)  # dummy multi-output by repetition
+                h1, _ = self.gp1.forward(X_train_5d)
                 h1_list.append(h1.unsqueeze(-1))
             h1_mean = torch.cat(h1_list, dim=-1)  # [N, latent_dim1]
             h2_input = self.projection(h1_mean)   # [N, hidden_dim]
@@ -153,12 +156,11 @@ class VDGPFisherNBVSelector(Module):
             self.gp2.set_data(X=h2_input)
             h2_list = []
             for _ in range(self.latent_dim2):
-                h2, _ = self.gp2.forward(h2_input)  # fake multi-output
+                h2, _ = self.gp2.forward(h2_input)
                 h2_list.append(h2.unsqueeze(-1))
             h2_mean = torch.cat(h2_list, dim=-1)  # [N, latent_dim2]
             h3_input = self.projection2(h2_mean).detach()  # [N, hidden_dim]
 
-        # Layer 3: GP3 → scalar uncertainty
         self.gp3.set_data(X=h3_input, y=y_train)
         self.gp3.num_data = y_train.size(0)
 
@@ -172,18 +174,18 @@ class VDGPFisherNBVSelector(Module):
                 print(f"Step {i+1}/{num_steps}, Loss: {loss:.3f}")
 
 
-    def optimize_gp_posterior_vdgp(self, proposal_uvs, proposal_centers, uncertainties, init_uv, uv_bounds, radius, steps=100, lr=1e-2, beta=2.0):
+    def optimize_gp_posterior_vdgp(self, proposal_uvs, proposal_centers, uncertainties, init_uv, uv_bounds, radius, object_center, steps=100, lr=1e-2, beta=2.0):
         device = self.device
         u_min, u_max = uv_bounds[0]
         v_min, v_max = uv_bounds[1]
 
-        # Normalize uncertainties for stability
+        # Normalize uncertainties
         y_train = uncertainties.to(device).squeeze()
         y_train = (y_train - y_train.mean()) / (y_train.std() + 1e-6)
 
         X_train = torch.tensor(np.array(proposal_centers), dtype=torch.float32, device=device)
 
-        self.train_vdgp(X_train, y_train)
+        self.train_vdgp(X_train, y_train, object_center)
 
         u = torch.tensor([init_uv[0]], device=device, dtype=torch.float32, requires_grad=True)
         v = torch.tensor([init_uv[1]], device=device, dtype=torch.float32, requires_grad=True)
@@ -193,28 +195,33 @@ class VDGPFisherNBVSelector(Module):
             uv_optimizer.zero_grad()
             cam_center = uv2car_torch(u, v) * radius  # (1, 3)
 
+            # Construct 5D input: [x, y, z, look_x, look_y]
+            look_dir = F.normalize(object_center - cam_center.squeeze(0), dim=-1)  # (3,)
+            cam_input = torch.cat([cam_center, look_dir[:2].unsqueeze(0)], dim=-1)  # (1, 5)
+
             with torch.no_grad():
+                # GP1 forward
                 h1_mean_list = []
                 for _ in range(self.latent_dim1):
-                    h1_mean, _ = self.gp1.forward(cam_center)
+                    h1_mean, _ = self.gp1.forward(cam_input)
                     h1_mean_list.append(h1_mean.unsqueeze(-1))
                 h1_mean = torch.cat(h1_mean_list, dim=-1)  # [1, latent_dim1]
 
                 h2_input = self.projection(h1_mean)  # [1, hidden_dim]
 
+                # GP2 forward
                 h2_mean_list = []
                 for _ in range(self.latent_dim2):
                     h2_mean, _ = self.gp2.forward(h2_input)
                     h2_mean_list.append(h2_mean.unsqueeze(-1))
                 h2_mean = torch.cat(h2_mean_list, dim=-1)  # [1, latent_dim2]
 
-                h3_input = self.projection2(h2_mean)
+                h3_input = self.projection2(h2_mean)  # [1, hidden_dim]
 
-            # Final GP
             if h3_input.ndim == 1:
                 h3_input = h3_input.unsqueeze(0)
-            mean, var = self.gp3.forward(h3_input, full_cov=False)
 
+            mean, var = self.gp3.forward(h3_input, full_cov=False)
             acquisition = mean + beta * var.sqrt()
             loss = -acquisition
             loss.backward()
@@ -226,6 +233,7 @@ class VDGPFisherNBVSelector(Module):
         final_uv = (u.item(), v.item())
         final_center = uv2car_torch(u.detach(), v.detach()).squeeze(0) * radius
         return final_center, final_uv
+
 
 class GPFeatureExtractor(torch.nn.Sequential):
     def __init__(self, input_dim):
