@@ -33,6 +33,8 @@ class VDGPFisherNBVSelector(Module):
         name2idx = {"xyz": 0, "rgb": 1, "sh": 2, "scale": 3, "rotation": 4, "opacity": 5}
         self.filter_out_idx: List[str] = [name2idx[k] for k in args.filter_out_grad]
 
+        self.latent_dim1 = 8  # or 16
+
         # 1st GP: 3D → 1D latent
         self.gp1 = gp.models.VariationalSparseGP(
             X=torch.empty(0, input_dim).to(device),
@@ -44,9 +46,9 @@ class VDGPFisherNBVSelector(Module):
 
         # Projection MLP: 1D → hidden_dim
         self.projection = nn.Sequential(
-            nn.Linear(1, hidden_dim),
+            nn.Linear(self.latent_dim1, hidden_dim),
             nn.ReLU(),
-            nn.Linear(hidden_dim, hidden_dim),
+            nn.Linear(hidden_dim, hidden_dim)
         ).to(device)
 
         # Example: gp2 outputs [N, 16] latent vector
@@ -60,7 +62,7 @@ class VDGPFisherNBVSelector(Module):
 
         # 2nd projection: hidden_dim → hidden_dim
         self.projection2 = nn.Sequential(
-            nn.Linear(1, hidden_dim),
+            nn.Linear(self.latent_dim2, hidden_dim),
             nn.ReLU(),
             nn.Linear(hidden_dim, hidden_dim),
         ).to(device)
@@ -136,18 +138,23 @@ class VDGPFisherNBVSelector(Module):
             for param in model.kernel.parameters():
                 param.data = param.data.to(self.device)
 
-        # Layer 1
+        # Layer 1: GP1 → latent_dim1
         with torch.no_grad():
             self.gp1.set_data(X=X_train)
-            h1_mean, _ = self.gp1.forward(X_train)
-            h2_input = self.projection(h1_mean.unsqueeze(-1)).detach()
+            h1_list = []
+            for _ in range(self.latent_dim1):
+                h1, _ = self.gp1.forward(X_train)  # dummy multi-output by repetition
+                h1_list.append(h1.unsqueeze(-1))
+            h1_mean = torch.cat(h1_list, dim=-1)  # [N, latent_dim1]
+            h2_input = self.projection(h1_mean)   # [N, hidden_dim]
 
-        # Layer 2
+        # Layer 2: GP2 → latent_dim2
         with torch.no_grad():
             self.gp2.set_data(X=h2_input)
-            h2_mean, _ = self.gp2.forward(h2_input)
-            h3_input = self.projection2(h2_mean.unsqueeze(-1)).detach()
+            h2_mean, _ = self.gp2.forward(h2_input)  # [N, latent_dim2]
+            h3_input = self.projection2(h2_mean).detach()  # [N, hidden_dim]
 
+        # Layer 3: GP3 → scalar uncertainty
         self.gp3.set_data(X=h3_input, y=y_train)
         self.gp3.num_data = y_train.size(0)
 
@@ -157,7 +164,7 @@ class VDGPFisherNBVSelector(Module):
 
         for i in range(num_steps):
             loss = svi.step()
-            if (i+1) % 50 == 0:
+            if (i + 1) % 50 == 0:
                 print(f"Step {i+1}/{num_steps}, Loss: {loss:.3f}")
 
 
@@ -193,7 +200,7 @@ class VDGPFisherNBVSelector(Module):
             if h3_input.ndim == 1:
                 h3_input = h3_input.unsqueeze(0)
             mean, var = self.gp3.forward(h3_input, full_cov=False)
-            
+
             acquisition = mean + beta * var.sqrt()
             loss = -acquisition
             loss.backward()
