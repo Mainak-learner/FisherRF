@@ -28,8 +28,8 @@ class VDGPFisherNBVSelector(Module):
 
         self.seed = args.seed
         self.reg_lambda = args.reg_lambda
-        self.I_test: bool = args.I_test
-        self.I_acq_reg: bool = args.I_acq_reg
+        self.I_test = args.I_test
+        self.I_acq_reg = args.I_acq_reg
 
         name2idx = {"xyz": 0, "rgb": 1, "sh": 2, "scale": 3, "rotation": 4, "opacity": 5}
         self.filter_out_idx = [name2idx[k] for k in args.filter_out_grad]
@@ -76,33 +76,21 @@ class VDGPFisherNBVSelector(Module):
     def model(self):
         pyro.module("gp3", self.gp3)
 
-        # Reconstruct 5D input: (3D cam centers + 2D look dirs)
-        look_dirs = F.normalize(self.object_center.unsqueeze(0) - self.X_train, dim=-1)  # [N, 3]
-        X_train_5d = torch.cat([self.X_train, look_dirs[:, :2]], dim=-1)  # [N, 5]
-
-        # GP1 forward
-        h1_list = [self.gp1.forward(self.X_train_5d)[0].unsqueeze(-1) for _ in range(self.latent_dim1)]
-        h1_mean = torch.cat(h1_list, dim=-1)  # [N, latent_dim1]
-        h2_input = self.projection(h1_mean)
-
-        # GP2 forward
-        h2_list = [self.gp2.forward(h2_input)[0].unsqueeze(-1) for _ in range(self.latent_dim2)]
-        h2_mean = torch.cat(h2_list, dim=-1)  # [N, latent_dim2]
-        h3_input = self.projection2(h2_mean)
-
-        return self.gp3.model(h3_input, self.y_train)
-
-    def guide(self):
-        # Reconstruct 5D input
-        look_dirs = F.normalize(self.object_center.unsqueeze(0) - self.X_train, dim=-1)
-        X_train_5d = torch.cat([self.X_train, look_dirs[:, :2]], dim=-1)
-
-        # GP1 forward
-        h1_list = [self.gp1.forward(self.X_train_5d)[0].unsqueeze(-1) for _ in range(self.latent_dim1)]
+        h1_list = [self.gp1.forward(self.X_train)[0].unsqueeze(-1) for _ in range(self.latent_dim1)]
         h1_mean = torch.cat(h1_list, dim=-1)
         h2_input = self.projection(h1_mean)
 
-        # GP2 forward
+        h2_list = [self.gp2.forward(h2_input)[0].unsqueeze(-1) for _ in range(self.latent_dim2)]
+        h2_mean = torch.cat(h2_list, dim=-1)
+        h3_input = self.projection2(h2_mean)
+
+        return self.gp3.model(h3_input, self.y_train)
+    
+    def guide(self):
+        h1_list = [self.gp1.forward(self.X_train)[0].unsqueeze(-1) for _ in range(self.latent_dim1)]
+        h1_mean = torch.cat(h1_list, dim=-1)
+        h2_input = self.projection(h1_mean)
+
         h2_list = [self.gp2.forward(h2_input)[0].unsqueeze(-1) for _ in range(self.latent_dim2)]
         h2_mean = torch.cat(h2_list, dim=-1)
         h3_input = self.projection2(h2_mean)
@@ -158,26 +146,17 @@ class VDGPFisherNBVSelector(Module):
         return torch.tensor(acq_scores, device=params[0].device)
     
     def train_vdgp(self, X_train, y_train, object_center, num_steps=500, lr=1e-4):
-        X_train = X_train.to(self.device)
-        y_train = y_train.to(self.device)
-
-        look_dirs = F.normalize(object_center.unsqueeze(0) - X_train, dim=-1)
-        X_train_5d = X_train
-
-        # Save for model and guide
-        self.X_train = X_train
-        self.X_train_5d = X_train_5d
-        self.y_train = y_train
-        self.object_center = object_center
+        self.X_train = X_train.to(self.device)
+        self.y_train = y_train.to(self.device)
+        self.object_center = object_center.to(self.device)
 
         for model in [self.gp1, self.gp2, self.gp3]:
             model.Xu = model.Xu.to(self.device)
             for param in model.kernel.parameters():
                 param.data = param.data.to(self.device)
 
-        # Set dummy input; real input used in model()
-        self.gp3.set_data(X=torch.zeros_like(X_train), y=y_train)
-        self.gp3.num_data = y_train.size(0)
+        self.gp3.set_data(X=torch.zeros_like(self.X_train), y=self.y_train)
+        self.gp3.num_data = self.y_train.size(0)
 
         optimizer = pyro.optim.Adam({"lr": lr})
         svi = pyro.infer.SVI(model=self.model, guide=self.guide, optim=optimizer, loss=pyro.infer.Trace_ELBO())
@@ -188,20 +167,18 @@ class VDGPFisherNBVSelector(Module):
                 print(f"Step {i+1}/{num_steps}, Loss: {loss:.3f}")
 
     def optimize_gp_posterior_vdgp(self, proposal_uvs, proposal_centers, uncertainties,
-                                init_uv, uv_bounds, radius, object_center,
-                                steps=100, lr=1e-2, beta=2.0):
+                                   init_uv, uv_bounds, radius, object_center,
+                                   steps=100, lr=1e-2, beta=2.0):
         device = self.device
         u_min, u_max = uv_bounds[0]
         v_min, v_max = uv_bounds[1]
 
-        # Normalize uncertainty
         y_train = uncertainties.to(device).squeeze()
         y_train = (y_train - y_train.mean()) / (y_train.std() + 1e-6)
 
         X_train = torch.tensor(np.array(proposal_centers), dtype=torch.float32, device=device)
         self.train_vdgp(X_train, y_train, object_center)
 
-        # Initialize pose
         u = torch.tensor([init_uv[0]], dtype=torch.float32, device=device, requires_grad=True)
         v = torch.tensor([init_uv[1]], dtype=torch.float32, device=device, requires_grad=True)
         optimizer = torch.optim.Adam([u, v], lr=lr)
@@ -209,22 +186,15 @@ class VDGPFisherNBVSelector(Module):
         for _ in range(steps):
             optimizer.zero_grad()
             cam_center = uv2car_torch(u, v) * radius  # (1, 3)
-            look_dir = F.normalize(object_center - cam_center.squeeze(0), dim=-1)
-            cam_input = torch.cat([cam_center, look_dir[:2].unsqueeze(0)], dim=-1)  # (1, 5)
 
-            # Forward through GP1
-            h1_list = [self.gp1.forward(cam_input)[0].unsqueeze(-1) for _ in range(self.latent_dim1)]
+            h1_list = [self.gp1.forward(cam_center)[0].unsqueeze(-1) for _ in range(self.latent_dim1)]
             h1_mean = torch.cat(h1_list, dim=-1)
             h2_input = self.projection(h1_mean)
 
-            # Forward through GP2
             h2_list = [self.gp2.forward(h2_input)[0].unsqueeze(-1) for _ in range(self.latent_dim2)]
             h2_mean = torch.cat(h2_list, dim=-1)
             h3_input = self.projection2(h2_mean)
 
-            # Final GP3
-            if h3_input.ndim == 1:
-                h3_input = h3_input.unsqueeze(0)
             mean, var = self.gp3.forward(h3_input, full_cov=False)
             acquisition = mean + beta * var.sqrt()
             loss = -acquisition
