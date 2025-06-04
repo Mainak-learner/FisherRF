@@ -131,7 +131,7 @@ class VDGPFisherNBVSelector(Module):
 
         return torch.tensor(acq_scores, device=params[0].device)
     
-    def train_vdgp(self, X_train, y_train, object_center, num_steps=500, lr=1e-4):
+    def train_vdgp(self, X_train, y_train, object_center, num_steps=500, lr=1e-7):
         X_train = X_train.to(self.device)
         y_train = y_train.to(self.device)
         object_center = object_center.to(self.device)
