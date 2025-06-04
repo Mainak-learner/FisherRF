@@ -74,7 +74,11 @@ class VDGPFisherNBVSelector(Module):
         )
 
     def model(self):
+        pyro.module("gp1", self.gp1)
+        pyro.module("gp2", self.gp2)
         pyro.module("gp3", self.gp3)
+        pyro.module("projection", self.projection)
+        pyro.module("projection2", self.projection2)
 
         h1_list = [self.gp1(self.X_train)[0].unsqueeze(-1) for _ in range(self.latent_dim1)]
         h1_mean = torch.cat(h1_list, dim=-1)
@@ -84,9 +88,7 @@ class VDGPFisherNBVSelector(Module):
         h2_mean = torch.cat(h2_list, dim=-1)
         h3_input = self.projection2(h2_mean)
 
-        # Don't call set_data again; just use forward call
-        f_loc, f_var = self.gp3(h3_input)
-        return self.gp3.likelihood(f_loc, f_var, self.y_train)
+        return self.gp3.model(h3_input, self.y_train)
         
     def guide(self):
         h1_list = [self.gp1(self.X_train)[0].unsqueeze(-1) for _ in range(self.latent_dim1)]
