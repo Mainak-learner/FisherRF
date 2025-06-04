@@ -25,6 +25,7 @@ from PIL import Image
 from active.gp_predictor import GPFisherNBVSelector, VDGPFisherNBVSelector
 import torchvision.transforms.functional as TF
 from arguments import ModelParams, PipelineParams, OptimizationParams
+import torch.nn.functional as F
 
 
 def render_fn(cam_center, object_center, pipe, gaussians, background, reference_camera, debug=False):
