@@ -76,24 +76,33 @@ class VDGPFisherNBVSelector(Module):
     def model(self):
         pyro.module("gp3", self.gp3)
 
+        # GP1 forward
         h1_list = [self.gp1.forward(self.X_train)[0].unsqueeze(-1) for _ in range(self.latent_dim1)]
         h1_mean = torch.cat(h1_list, dim=-1)
         h2_input = self.projection(h1_mean)
 
+        # GP2 forward
         h2_list = [self.gp2.forward(h2_input)[0].unsqueeze(-1) for _ in range(self.latent_dim2)]
         h2_mean = torch.cat(h2_list, dim=-1)
         h3_input = self.projection2(h2_mean)
+
+        # Set the inputs/outputs for GP3
+        self.gp3.set_data(X=h3_input.detach(), y=self.y_train.detach())
 
         return self.gp3.model()
-    
+        
     def guide(self):
+        # GP1 forward
         h1_list = [self.gp1.forward(self.X_train)[0].unsqueeze(-1) for _ in range(self.latent_dim1)]
         h1_mean = torch.cat(h1_list, dim=-1)
         h2_input = self.projection(h1_mean)
 
+        # GP2 forward
         h2_list = [self.gp2.forward(h2_input)[0].unsqueeze(-1) for _ in range(self.latent_dim2)]
         h2_mean = torch.cat(h2_list, dim=-1)
         h3_input = self.projection2(h2_mean)
+
+        self.gp3.set_data(X=h3_input.detach(), y=self.y_train.detach())
 
         return self.gp3.guide()
     
