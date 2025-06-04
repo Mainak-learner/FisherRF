@@ -162,7 +162,7 @@ class VDGPFisherNBVSelector(Module):
         y_train = y_train.to(self.device)
 
         look_dirs = F.normalize(object_center.unsqueeze(0) - X_train, dim=-1)
-        X_train_5d = torch.cat([X_train, look_dirs[:, :2]], dim=-1)
+        X_train_5d = X_train
 
         # Save for model and guide
         self.X_train = X_train
