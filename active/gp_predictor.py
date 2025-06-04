@@ -81,7 +81,7 @@ class VDGPFisherNBVSelector(Module):
         X_train_5d = torch.cat([self.X_train, look_dirs[:, :2]], dim=-1)  # [N, 5]
 
         # GP1 forward
-        h1_list = [self.gp1.forward(X_train_5d)[0].unsqueeze(-1) for _ in range(self.latent_dim1)]
+        h1_list = [self.gp1.forward(self.X_train_5d)[0].unsqueeze(-1) for _ in range(self.latent_dim1)]
         h1_mean = torch.cat(h1_list, dim=-1)  # [N, latent_dim1]
         h2_input = self.projection(h1_mean)
 
@@ -98,7 +98,7 @@ class VDGPFisherNBVSelector(Module):
         X_train_5d = torch.cat([self.X_train, look_dirs[:, :2]], dim=-1)
 
         # GP1 forward
-        h1_list = [self.gp1.forward(X_train_5d)[0].unsqueeze(-1) for _ in range(self.latent_dim1)]
+        h1_list = [self.gp1.forward(self.X_train_5d)[0].unsqueeze(-1) for _ in range(self.latent_dim1)]
         h1_mean = torch.cat(h1_list, dim=-1)
         h2_input = self.projection(h1_mean)
 
@@ -164,7 +164,9 @@ class VDGPFisherNBVSelector(Module):
         look_dirs = F.normalize(object_center.unsqueeze(0) - X_train, dim=-1)
         X_train_5d = torch.cat([X_train, look_dirs[:, :2]], dim=-1)
 
+        # Save for model and guide
         self.X_train = X_train
+        self.X_train_5d = X_train_5d
         self.y_train = y_train
         self.object_center = object_center
 
