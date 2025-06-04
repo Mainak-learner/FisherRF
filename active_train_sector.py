@@ -194,14 +194,14 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
             oracle_img = render_with_oracle(final_cam.camera_center, object_center, pipe, oracle_gaussians, background, reference_camera)
             final_cam.original_image = oracle_img.detach().clamp(0.0, 1.0).cuda()
         elif args.vdgp:
-            center_opt, uv_opt = selector.optimize_gp_posterior_vdgp(
-                proposal_uvs=...,
-                proposal_centers=...,
-                uncertainties=...,
-                init_uv=...,
+            selector.optimize_gp_posterior_vdgp(
+                proposal_uvs=[all_uvs[i] for i in sector_indices],
+                proposal_centers=[all_centers[i].cpu().numpy() for i in sector_indices],
+                uncertainties=uncertainties,  # <-- must be a torch.Tensor
+                init_uv=init_pose,
                 uv_bounds=(u_bounds, v_bounds),
                 radius=sample_radius,
-                object_center=object_center,  # <-- Required
+                object_center=object_center,  # <-- make sure this is passed
                 steps=args.pose_optim_steps,
                 lr=args.pose_lr
             )
