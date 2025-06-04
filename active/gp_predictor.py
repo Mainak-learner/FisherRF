@@ -131,37 +131,37 @@ class VDGPFisherNBVSelector(Module):
 
         return torch.tensor(acq_scores, device=params[0].device)
     
-    def train_vdgp(self, X_train, y_train, object_center, num_steps=500, lr=1e-7):
+    def train_vdgp(self, X_train, y_train, num_steps=500, lr=1e-4):
         X_train = X_train.to(self.device)
         y_train = y_train.to(self.device)
-        object_center = object_center.to(self.device)
 
         for model in [self.gp1, self.gp2, self.gp3]:
             model.Xu = model.Xu.to(self.device)
             for param in model.kernel.parameters():
                 param.data = param.data.to(self.device)
 
-        # Construct 5D input: [x, y, z, look_x, look_y]
-        with torch.no_grad():
-            look_dirs = F.normalize(object_center.unsqueeze(0) - X_train, dim=-1)  # [N, 3]
-            X_train_5d = torch.cat([X_train, look_dirs[:, :2]], dim=-1)  # [N, 5]
-            self.gp1.set_data(X=X_train_5d)
-            h1_list = []
-            for _ in range(self.latent_dim1):
-                h1, _ = self.gp1.forward(X_train_5d)
-                h1_list.append(h1.unsqueeze(-1))
-            h1_mean = torch.cat(h1_list, dim=-1)  # [N, latent_dim1]
-            h2_input = self.projection(h1_mean)   # [N, hidden_dim]
+        # Layer 1: GP1 + projection
+        look_dirs = F.normalize(self.object_center.unsqueeze(0) - X_train, dim=-1)  # [N, 3]
+        X_train_5d = torch.cat([X_train, look_dirs[:, :2]], dim=-1)  # [N, 5]
+        self.gp1.set_data(X=X_train_5d)
 
-        with torch.no_grad():
-            self.gp2.set_data(X=h2_input)
-            h2_list = []
-            for _ in range(self.latent_dim2):
-                h2, _ = self.gp2.forward(h2_input)
-                h2_list.append(h2.unsqueeze(-1))
-            h2_mean = torch.cat(h2_list, dim=-1)  # [N, latent_dim2]
-            h3_input = self.projection2(h2_mean).detach()  # [N, hidden_dim]
+        h1_list = []
+        for _ in range(self.latent_dim1):
+            h1, _ = self.gp1.forward(X_train_5d)
+            h1_list.append(h1.unsqueeze(-1))
+        h1_mean = torch.cat(h1_list, dim=-1)  # [N, latent_dim1]
+        h2_input = self.projection(h1_mean)   # [N, hidden_dim]
 
+        # Layer 2: GP2 + projection2
+        self.gp2.set_data(X=h2_input)
+        h2_list = []
+        for _ in range(self.latent_dim2):
+            h2, _ = self.gp2.forward(h2_input)
+            h2_list.append(h2.unsqueeze(-1))
+        h2_mean = torch.cat(h2_list, dim=-1)  # [N, latent_dim2]
+        h3_input = self.projection2(h2_mean)  # [N, hidden_dim]
+
+        # Final GP3
         self.gp3.set_data(X=h3_input, y=y_train)
         self.gp3.num_data = y_train.size(0)
 
@@ -173,6 +173,7 @@ class VDGPFisherNBVSelector(Module):
             loss = svi.step()
             if (i + 1) % 50 == 0:
                 print(f"Step {i+1}/{num_steps}, Loss: {loss:.3f}")
+
 
 
     def optimize_gp_posterior_vdgp(self, proposal_uvs, proposal_centers, uncertainties, init_uv, uv_bounds, radius, object_center, steps=100, lr=1e-2, beta=2.0):
