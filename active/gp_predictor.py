@@ -43,7 +43,6 @@ class VDGPFisherNBVSelector(Module):
             kernel=gp.kernels.RBF(input_dim),
             Xu=torch.randn(num_inducing, input_dim).to(device),
             likelihood=None,
-            name="gp1"
         )
 
         self.projection = nn.Sequential(
@@ -58,7 +57,6 @@ class VDGPFisherNBVSelector(Module):
             kernel=gp.kernels.RBF(hidden_dim),
             Xu=torch.randn(num_inducing, hidden_dim).to(device),
             likelihood=None,
-            name="gp2"
         )
 
         self.projection2 = nn.Sequential(
@@ -73,7 +71,6 @@ class VDGPFisherNBVSelector(Module):
             kernel=gp.kernels.RBF(hidden_dim),
             Xu=torch.randn(num_inducing, hidden_dim).to(device),
             likelihood=gp.likelihoods.Gaussian(),
-            name="gp3"
         )
 
     def model(self):
