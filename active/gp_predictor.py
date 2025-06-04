@@ -51,6 +51,7 @@ class VDGPFisherNBVSelector(Module):
             nn.Linear(hidden_dim, hidden_dim)
         ).to(device)
 
+        self.latent_dim2 = 16
         # Example: gp2 outputs [N, 16] latent vector
         self.gp2 = gp.models.VariationalSparseGP(
             X=torch.empty(0, hidden_dim).to(device),
