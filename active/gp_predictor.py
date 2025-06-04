@@ -75,10 +75,28 @@ class VDGPFisherNBVSelector(Module):
 
     def model(self):
         pyro.module("gp3", self.gp3)
-        return self.gp3.model()
+
+        # Forward all the way to h3_input using saved inputs
+        h1_list = [self.gp1.forward(self.X_train_5d)[0].unsqueeze(-1) for _ in range(self.latent_dim1)]
+        h1_mean = torch.cat(h1_list, dim=-1)
+        h2_input = self.projection(h1_mean)
+
+        h2_list = [self.gp2.forward(h2_input)[0].unsqueeze(-1) for _ in range(self.latent_dim2)]
+        h2_mean = torch.cat(h2_list, dim=-1)
+        h3_input = self.projection2(h2_mean)
+
+        return self.gp3.model(h3_input, self.y_train)
 
     def guide(self):
-        return self.gp3.guide()
+        h1_list = [self.gp1.forward(self.X_train_5d)[0].unsqueeze(-1) for _ in range(self.latent_dim1)]
+        h1_mean = torch.cat(h1_list, dim=-1)
+        h2_input = self.projection(h1_mean)
+
+        h2_list = [self.gp2.forward(h2_input)[0].unsqueeze(-1) for _ in range(self.latent_dim2)]
+        h2_mean = torch.cat(h2_list, dim=-1)
+        h3_input = self.projection2(h2_mean)
+
+        return self.gp3.guide(h3_input, self.y_train)
     
     def compute_fisher_uncertainty(self, gaussians, selected_cameras, candidate_cameras, pipe, background):
         """
@@ -135,25 +153,16 @@ class VDGPFisherNBVSelector(Module):
         look_dirs = F.normalize(object_center.unsqueeze(0) - X_train, dim=-1)
         X_train_5d = torch.cat([X_train, look_dirs[:, :2]], dim=-1)
 
+        self.X_train_5d = X_train_5d
+        self.y_train = y_train
+
         for model in [self.gp1, self.gp2, self.gp3]:
             model.Xu = model.Xu.to(self.device)
             for param in model.kernel.parameters():
                 param.data = param.data.to(self.device)
 
-        # GP1 forward
-        self.gp1.set_data(X=X_train_5d)
-        h1_list = [self.gp1.forward(X_train_5d)[0].unsqueeze(-1) for _ in range(self.latent_dim1)]
-        h1_mean = torch.cat(h1_list, dim=-1)
-        h2_input = self.projection(h1_mean)
-
-        # GP2 forward
-        self.gp2.set_data(X=h2_input)
-        h2_list = [self.gp2.forward(h2_input)[0].unsqueeze(-1) for _ in range(self.latent_dim2)]
-        h2_mean = torch.cat(h2_list, dim=-1)
-        h3_input = self.projection2(h2_mean)
-
-        # GP3 training
-        self.gp3.set_data(X=h3_input, y=y_train)
+        # Set dummy input; real input used in model()
+        self.gp3.set_data(X=torch.zeros_like(X_train), y=y_train)
         self.gp3.num_data = y_train.size(0)
 
         optimizer = pyro.optim.Adam({"lr": lr})
