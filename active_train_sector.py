@@ -14,6 +14,7 @@ from utils.loss_utils import l1_loss, ssim
 from utils.image_utils import psnr
 from lpipsPyTorch import lpips_func
 from active.lpips_selector import LPIPSNBVSelector
+from active.pose_to_image_encoder import PoseToImageEncoder
 from scene.sector_pose_gen import generate_circular_hemisphere_poses, divide_hemisphere_poses
 from utils.camera_utils import look_at, look_at_torch
 from utils.graphics_utils import uv2car_torch
@@ -25,6 +26,7 @@ from PIL import Image
 from active.gp_predictor import GPFisherNBVSelector, VDGPFisherNBVSelector
 import torchvision.transforms.functional as TF
 from arguments import ModelParams, PipelineParams, OptimizationParams
+from active.train_phi_pose_to_feat import train_phi_sector
 import torch.nn.functional as F
 
 
@@ -138,7 +140,8 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
     N = len(selected_cams)
     print(f"[Middle Circle] PSNR: {psnr_total/N:.2f}, SSIM: {ssim_total/N:.4f}, LPIPS: {lpips_total/N:.4f}")
     if args.vdgp:
-        selector = VDGPFisherNBVSelector(args, input_dim=3, device="cuda")
+        pose_feat_dim = 3  # or 6 if using orientation
+        image_feat_dim = 128  # same as Φ output dim   
     else:
         selector = GPFisherNBVSelector(args, device="cuda")
     sector_selections = []
@@ -166,10 +169,14 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
         u_bounds = (min(u_vals), max(u_vals))
         v_bounds = (min(v_vals), max(v_vals))
 
-        candidate_cams = [DummyCamera(*look_at(cam_center.detach(), object_center.detach()), reference_camera) for cam_center in proposal_centers]
-
-        # Compute Fisher-trace based uncertainty at proposal poses
-        uncertainties = selector.compute_fisher_uncertainty(gaussians, selected_cams, candidate_cams, pipe, background)
+        # Step 1: Render candidate images
+        candidate_cams, candidate_images = [], []
+        for cam_center in proposal_centers:
+            dummy = DummyCamera(*look_at(cam_center.detach(), object_center.detach()), reference_camera)
+            rgb = render_with_oracle(cam_center, object_center, pipe, oracle_gaussians, background, reference_camera)
+            dummy.original_image = rgb.detach().clamp(0, 1).cuda()
+            candidate_cams.append(dummy)
+            candidate_images.append(rgb)
 
         # sector_ref_imgs = []
         # for idx in sector_indices:
@@ -191,10 +198,27 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
         # Fit GP on proposal UVs and predict over full hemisphere
 
         if args.nbv_process=="selection":
+            # Compute Fisher-trace based uncertainty at proposal poses
+            uncertainties = selector.compute_fisher_uncertainty(gaussians, selected_cams, candidate_cams, pipe, background)
             final_cam = candidate_cams[torch.argmax(uncertainties)]
             oracle_img = render_with_oracle(final_cam.camera_center, object_center, pipe, oracle_gaussians, background, reference_camera)
             final_cam.original_image = oracle_img.detach().clamp(0.0, 1.0).cuda()
         elif args.vdgp:
+            pose_tensor = torch.stack([cam.camera_center for cam in candidate_cams], dim=0).float().to("cuda")  # (N, 3)
+            image_tensor = torch.stack(candidate_images, dim=0).float().to("cuda")  # (N, 3, H, W)
+
+            # Step 2: Train Φ for this sector
+            phi = train_phi_sector(pose_tensor, image_tensor)
+            phi.eval()
+            selector = VDGPFisherNBVSelector(
+                args,
+                input_dim=pose_feat_dim + image_feat_dim,  # total input dim to GP1
+                encoder=None,  # not used at runtime
+                phi_pose_to_feat=phi,
+                device="cuda"
+            ) 
+            # Compute Fisher-trace based uncertainty at proposal poses
+            uncertainties = selector.compute_fisher_uncertainty(gaussians, selected_cams, candidate_cams, pipe, background)
             center_opt, uv_opt = selector.optimize_gp_posterior_vdgp(
                 proposal_uvs=[all_uvs[i] for i in sector_indices],
                 proposal_centers=[all_centers[i].cpu().numpy() for i in sector_indices],
@@ -210,6 +234,8 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
             oracle_img = render_with_oracle(center_opt, object_center, pipe, oracle_gaussians, background, reference_camera)
             final_cam = DummyCamera(*look_at(center_opt.detach(), object_center.detach()), reference_camera, image=oracle_img.detach())
         elif args.deepkgp:
+            # Compute Fisher-trace based uncertainty at proposal poses
+            uncertainties = selector.compute_fisher_uncertainty(gaussians, selected_cams, candidate_cams, pipe, background)
             center_opt, uv_opt = selector.optimize_gp_posterior_dkl(
                 proposal_uvs=[all_uvs[i] for i in sector_indices],
                 proposal_centers=[all_centers[i].cpu().numpy() for i in sector_indices],

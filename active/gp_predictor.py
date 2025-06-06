@@ -20,10 +20,23 @@ from gpytorch.likelihoods import GaussianLikelihood
 import torch.nn.functional as F
 
 class VDGPFisherNBVSelector(Module):
-    def __init__(self, args, input_dim=3, hidden_dim=32, num_inducing=128, device="cuda"):
+    def __init__(self, args, input_dim, encoder: nn.Module, phi_pose_to_feat: nn.Module, hidden_dim=32, num_inducing=128, device="cuda"):
         super().__init__()
         self.device = device
-        self.input_dim = input_dim
+        self.input_dim = input_dim  # should be pose_dim + halluc_feat_dim
+
+        # Hallucination encoder: Φ(pose) → image features
+        self.phi_pose_to_feat = phi_pose_to_feat.to(device)
+        self.phi_pose_to_feat.eval()
+        for p in self.phi_pose_to_feat.parameters():
+            p.requires_grad = False
+
+        # Real image encoder: only used to pretrain Φ
+        self.encoder = encoder.to(device)
+        self.encoder.eval()
+        for p in self.encoder.parameters():
+            p.requires_grad = False
+
         self.hidden_dim = hidden_dim
 
         self.seed = args.seed
@@ -37,6 +50,7 @@ class VDGPFisherNBVSelector(Module):
         self.latent_dim1 = 8
         self.latent_dim2 = 16
 
+        # First GP over pose+feat
         self.gp1 = gp.models.VariationalSparseGP(
             X=torch.empty(0, input_dim).to(device),
             y=None,
@@ -74,25 +88,20 @@ class VDGPFisherNBVSelector(Module):
         )
 
     def model(self):
-        pyro.module("gp1", self.gp1)
-        pyro.module("gp2", self.gp2)
         pyro.module("gp3", self.gp3)
-        pyro.module("projection", self.projection)
-        pyro.module("projection2", self.projection2)
 
-        h1_list = [self.gp1(self.X_train)[0].unsqueeze(-1) for _ in range(self.latent_dim1)]
+        h1_list = [self.gp1(self.X_train_feat.detach())[0].unsqueeze(-1) for _ in range(self.latent_dim1)]
         h1_mean = torch.cat(h1_list, dim=-1)
         h2_input = self.projection(h1_mean)
 
-        h2_list = [self.gp2(h2_input)[0].unsqueeze(-1) for _ in range(self.latent_dim2)]
+        h2_list = [self.gp2(h2_input.detach())[0].unsqueeze(-1) for _ in range(self.latent_dim2)]
         h2_mean = torch.cat(h2_list, dim=-1)
         h3_input = self.projection2(h2_mean)
 
-        self.gp3.set_data(X=h3_input, y=self.y_train)
-        return self.gp3.model()
-        
+        return self.gp3.model(h3_input, self.y_train)
+
     def guide(self):
-        h1_list = [self.gp1(self.X_train)[0].unsqueeze(-1) for _ in range(self.latent_dim1)]
+        h1_list = [self.gp1(self.X_train_feat)[0].unsqueeze(-1) for _ in range(self.latent_dim1)]
         h1_mean = torch.cat(h1_list, dim=-1)
         h2_input = self.projection(h1_mean)
 
@@ -156,12 +165,11 @@ class VDGPFisherNBVSelector(Module):
         self.y_train = y_train.to(self.device)
         self.object_center = object_center.to(self.device)
 
-        for model in [self.gp1, self.gp2, self.gp3]:
-            model.Xu = model.Xu.to(self.device)
-            for param in model.kernel.parameters():
-                param.data = param.data.to(self.device)
+        with torch.no_grad():
+            halluc_feats = self.phi_pose_to_feat(self.X_train)
+            self.X_train_feat = torch.cat([self.X_train, halluc_feats], dim=-1)
 
-        self.gp3.set_data(X=torch.zeros_like(self.X_train), y=self.y_train)
+        self.gp3.set_data(X=torch.zeros_like(self.X_train_feat), y=self.y_train)
         self.gp3.num_data = self.y_train.size(0)
 
         optimizer = pyro.optim.Adam({"lr": lr})
@@ -181,8 +189,8 @@ class VDGPFisherNBVSelector(Module):
 
         y_train = uncertainties.to(device).squeeze()
         y_train = (y_train - y_train.mean()) / (y_train.std() + 1e-6)
-
         X_train = torch.tensor(np.array(proposal_centers), dtype=torch.float32, device=device)
+
         self.train_vdgp(X_train, y_train, object_center)
 
         u = torch.tensor([init_uv[0]], dtype=torch.float32, device=device, requires_grad=True)
@@ -193,15 +201,19 @@ class VDGPFisherNBVSelector(Module):
             optimizer.zero_grad()
             cam_center = uv2car_torch(u, v) * radius  # (1, 3)
 
-            h1_list = [self.gp1.forward(cam_center)[0].unsqueeze(-1) for _ in range(self.latent_dim1)]
+            with torch.no_grad():
+                halluc_feat = self.phi_pose_to_feat(cam_center)
+                cam_feat = torch.cat([cam_center, halluc_feat], dim=-1)
+
+            h1_list = [self.gp1(cam_feat)[0].unsqueeze(-1) for _ in range(self.latent_dim1)]
             h1_mean = torch.cat(h1_list, dim=-1)
             h2_input = self.projection(h1_mean)
 
-            h2_list = [self.gp2.forward(h2_input)[0].unsqueeze(-1) for _ in range(self.latent_dim2)]
+            h2_list = [self.gp2(h2_input)[0].unsqueeze(-1) for _ in range(self.latent_dim2)]
             h2_mean = torch.cat(h2_list, dim=-1)
             h3_input = self.projection2(h2_mean)
 
-            mean, var = self.gp3.forward(h3_input, full_cov=False)
+            mean, var = self.gp3(h3_input, full_cov=False)
             acquisition = mean + beta * var.sqrt()
             loss = -acquisition
             loss.backward()
