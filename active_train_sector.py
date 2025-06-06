@@ -14,7 +14,7 @@ from utils.loss_utils import l1_loss, ssim
 from utils.image_utils import psnr
 from lpipsPyTorch import lpips_func
 from active.lpips_selector import LPIPSNBVSelector
-from active.pose_to_image_encoder import PoseToImageEncoder
+from active.encoders import PoseToImageEncoder
 from scene.sector_pose_gen import generate_circular_hemisphere_poses, divide_hemisphere_poses
 from utils.camera_utils import look_at, look_at_torch
 from utils.graphics_utils import uv2car_torch
