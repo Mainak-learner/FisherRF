@@ -1,7 +1,6 @@
 import torch
 import torch.nn as nn
-from active.pose_to_image_encoder import PoseToImageEncoder
-from active.image_encoder import ImageEncoder
+from active.encoders import ImageEncoder, PoseToImageEncoder
 
 def train_phi_sector(pose_tensor, image_tensor, device="cuda", pose_dim=3, image_feat_dim=128, epochs=300):
     """
