@@ -31,12 +31,6 @@ class VDGPFisherNBVSelector(Module):
         for p in self.phi_pose_to_feat.parameters():
             p.requires_grad = False
 
-        # Real image encoder: only used to pretrain Φ
-        self.encoder = encoder.to(device)
-        self.encoder.eval()
-        for p in self.encoder.parameters():
-            p.requires_grad = False
-
         self.hidden_dim = hidden_dim
 
         self.seed = args.seed
