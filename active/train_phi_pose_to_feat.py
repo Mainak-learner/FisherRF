@@ -2,6 +2,15 @@ import torch
 import torch.nn as nn
 from active.encoders import ImageEncoder, PoseToImageEncoder
 
+#To Prevent OOM issue:
+def encode_images_in_batches(image_encoder, image_tensor, batch_size=4):
+    feats = []
+    with torch.no_grad():
+        for i in range(0, image_tensor.shape[0], batch_size):
+            batch = image_tensor[i:i+batch_size].to(image_tensor.device)
+            feats.append(image_encoder(batch))
+    return torch.cat(feats, dim=0)
+
 def train_phi_sector(pose_tensor, image_tensor, device="cuda", pose_dim=3, image_feat_dim=128, epochs=300):
     """
     pose_tensor: (N, 3) candidate pose centers
@@ -11,8 +20,7 @@ def train_phi_sector(pose_tensor, image_tensor, device="cuda", pose_dim=3, image
     image_encoder = ImageEncoder(output_dim=image_feat_dim).to(device)
     image_encoder.eval()
 
-    with torch.no_grad():
-        image_feats = image_encoder(image_tensor.to(device))  # (N, image_feat_dim)
+    image_feats = encode_images_in_batches(image_encoder=image_encoder, image_tensor=image_tensor)
 
     phi = PoseToImageEncoder(pose_dim=pose_dim, image_feat_dim=image_feat_dim).to(device)
     optimizer = torch.optim.Adam(phi.parameters(), lr=1e-3)
