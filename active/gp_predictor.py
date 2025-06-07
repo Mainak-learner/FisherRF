@@ -160,8 +160,9 @@ class VDGPFisherNBVSelector(Module):
         self.object_center = object_center.to(self.device)
 
         with torch.no_grad():
-            halluc_feats = self.phi_pose_to_feat(self.X_train)
-            self.X_train_feat = torch.cat([self.X_train, halluc_feats], dim=-1)
+            X_train = self.X_train.to(self.device)
+            halluc_feats = self.phi_pose_to_feat(X_train).to(self.device)
+            self.X_train_feat = torch.cat([X_train, halluc_feats], dim=-1).to(self.device)
 
         self.gp3.set_data(X=torch.zeros_like(self.X_train_feat), y=self.y_train)
         self.gp3.num_data = self.y_train.size(0)
