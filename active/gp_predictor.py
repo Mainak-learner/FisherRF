@@ -159,6 +159,11 @@ class VDGPFisherNBVSelector(Module):
         self.y_train = y_train.to(self.device)
         self.object_center = object_center.to(self.device)
 
+        for model in [self.gp1, self.gp2, self.gp3]:
+            model.Xu = model.Xu.to(self.device)
+            for param in model.kernel.parameters():
+                param.data = param.data.to(self.device)
+
         with torch.no_grad():
             X_train = self.X_train.to(self.device)
             halluc_feats = self.phi_pose_to_feat(X_train).to(self.device)
