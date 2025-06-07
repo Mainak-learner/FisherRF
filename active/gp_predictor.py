@@ -164,6 +164,9 @@ class VDGPFisherNBVSelector(Module):
             halluc_feats = self.phi_pose_to_feat(X_train).to(self.device)
             self.X_train_feat = torch.cat([X_train, halluc_feats], dim=-1).to(self.device)
 
+        # ensure GP1 is updated too
+        self.gp1.set_data(X=self.X_train_feat, y=None)
+
         self.gp3.set_data(X=torch.zeros_like(self.X_train_feat), y=self.y_train)
         self.gp3.num_data = self.y_train.size(0)
 
