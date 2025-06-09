@@ -20,7 +20,7 @@ from gpytorch.likelihoods import GaussianLikelihood
 import torch.nn.functional as F
 
 class VDGPFisherNBVSelector(Module):
-    def __init__(self, args, input_dim, encoder: nn.Module, phi_pose_to_feat: nn.Module, hidden_dim=32, num_inducing=32, device="cuda"):
+    def __init__(self, args, input_dim, phi_pose_to_feat: nn.Module, num_inducing=32, device="cuda"):
         super().__init__()
         self.device = device
         self.input_dim = input_dim  # pose_dim + halluc_feat_dim
@@ -30,7 +30,6 @@ class VDGPFisherNBVSelector(Module):
         for p in self.phi_pose_to_feat.parameters():
             p.requires_grad = False
 
-        self.hidden_dim = hidden_dim
         self.seed = args.seed
         self.reg_lambda = args.reg_lambda
         self.I_test = args.I_test
@@ -39,55 +38,22 @@ class VDGPFisherNBVSelector(Module):
         name2idx = {"xyz": 0, "rgb": 1, "sh": 2, "scale": 3, "rotation": 4, "opacity": 5}
         self.filter_out_idx = [name2idx[k] for k in args.filter_out_grad]
 
-        self.latent_dim1 = 4
-
-        self.gp1 = gp.models.VariationalSparseGP(
+        self.gp = gp.models.VariationalSparseGP(
             X=torch.empty(0, input_dim).to(device),
             y=None,
             kernel=gp.kernels.RBF(input_dim),
             Xu=torch.randn(num_inducing, input_dim).to(device),
-            likelihood=None,
+            likelihood=gp.likelihoods.Gaussian()
         )
-
-        self.projection = nn.Sequential(
-            nn.Linear(self.latent_dim1, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, hidden_dim)
-        ).to(device)
-
-        self.gp2 = gp.models.VariationalSparseGP(
-            X=torch.empty(0, hidden_dim).to(device),
-            y=None,
-            kernel=gp.kernels.RBF(hidden_dim),
-            Xu=torch.randn(num_inducing, hidden_dim).to(device),
-            likelihood=gp.likelihoods.Gaussian(),
-        )
-
-        # Freeze gp1 and allow training only on projection + gp2
-        for param in self.gp1.parameters():
-            param.requires_grad = False
-        for param in self.projection.parameters():
-            param.requires_grad = True
-        for param in self.gp2.parameters():
-            param.requires_grad = True
 
     def model(self):
-        pyro.module("gp2", self.gp2)
-
-        h1_list = [self.gp1(self.X_train_feat.detach())[0].unsqueeze(-1) for _ in range(self.latent_dim1)]
-        h1_mean = torch.cat(h1_list, dim=-1)  # [N, latent_dim1]
-        h2_input = self.projection(h1_mean)    # [N, hidden_dim]
-
-        self.gp2.set_data(X=h2_input, y=self.y_train)
-        return self.gp2.model()
+        pyro.module("gp", self.gp)
+        self.gp.set_data(X=self.X_train_feat, y=self.y_train)
+        return self.gp.model()
 
     def guide(self):
-        h1_list = [self.gp1(self.X_train_feat)[0].unsqueeze(-1) for _ in range(self.latent_dim1)]
-        h1_mean = torch.cat(h1_list, dim=-1)
-        h2_input = self.projection(h1_mean)
-
-        self.gp2.set_data(X=h2_input, y=self.y_train)
-        return self.gp2.guide()
+        self.gp.set_data(X=self.X_train_feat, y=self.y_train)
+        return self.gp.guide()
     
     def compute_fisher_uncertainty(self, gaussians, selected_cameras, candidate_cameras, pipe, background):
         """
@@ -137,33 +103,17 @@ class VDGPFisherNBVSelector(Module):
 
         return torch.tensor(acq_scores, device=params[0].device)
     
-    def train_vdgp(self, X_train, y_train, object_center, num_steps=500, lr=1e-4):
+    def train_vdgp(self, X_train, y_train, object_center, num_steps=300, lr=1e-3):
         self.X_train = X_train.to(self.device)
         self.y_train = y_train.to(self.device)
         self.object_center = object_center.to(self.device)
 
-        # Push GP models' Xu and kernel parameters to correct device
-        for model in [self.gp1, self.gp2]:
-            model.Xu = model.Xu.to(self.device)
-            for param in model.kernel.parameters():
-                param.data = param.data.to(self.device)
-
         with torch.no_grad():
-            halluc_feats = self.phi_pose_to_feat(self.X_train).to(self.device)
+            halluc_feats = self.phi_pose_to_feat(self.X_train)
             self.X_train_feat = torch.cat([self.X_train, halluc_feats], dim=-1)
 
-        # Set inputs for GP1 (feature GP)
-        self.gp1.set_data(X=self.X_train_feat, y=None)
-
-        # Run gp1 → projection
-        with torch.no_grad():
-            h1_list = [self.gp1(self.X_train_feat)[0].unsqueeze(-1) for _ in range(self.latent_dim1)]
-            h1_mean = torch.cat(h1_list, dim=-1)
-            h2_input = self.projection(h1_mean)
-
-        # Set inputs for gp2
-        self.gp2.set_data(X=h2_input, y=self.y_train)
-        self.gp2.num_data = self.y_train.size(0)
+        self.gp.set_data(X=self.X_train_feat, y=self.y_train)
+        self.gp.num_data = self.y_train.size(0)
 
         optimizer = pyro.optim.Adam({"lr": lr})
         svi = pyro.infer.SVI(model=self.model, guide=self.guide, optim=optimizer, loss=pyro.infer.Trace_ELBO())
@@ -174,39 +124,30 @@ class VDGPFisherNBVSelector(Module):
                 print(f"Step {i+1}/{num_steps}, Loss: {loss:.3f}")
 
     def optimize_gp_posterior_vdgp(self, proposal_uvs, proposal_centers, uncertainties,
-                                init_uv, uv_bounds, radius, object_center,
-                                steps=100, lr=1e-2, beta=2.0):
+                                   init_uv, uv_bounds, radius, object_center,
+                                   steps=100, lr=1e-2, beta=2.0):
         device = self.device
         u_min, u_max = uv_bounds[0]
         v_min, v_max = uv_bounds[1]
 
-        # Normalize uncertainties
         y_train = uncertainties.to(device).squeeze()
         y_train = (y_train - y_train.mean()) / (y_train.std() + 1e-6)
-
-        # Train GP
         X_train = torch.tensor(np.array(proposal_centers), dtype=torch.float32, device=device)
+
         self.train_vdgp(X_train, y_train, object_center)
 
-        # Optimize pose (u, v)
         u = torch.tensor([init_uv[0]], dtype=torch.float32, device=device, requires_grad=True)
         v = torch.tensor([init_uv[1]], dtype=torch.float32, device=device, requires_grad=True)
         optimizer = torch.optim.Adam([u, v], lr=lr)
 
         for _ in range(steps):
             optimizer.zero_grad()
-            cam_center = uv2car_torch(u, v) * radius  # (1, 3)
-
+            cam_center = uv2car_torch(u, v) * radius
             with torch.no_grad():
                 halluc_feat = self.phi_pose_to_feat(cam_center)
                 cam_feat = torch.cat([cam_center, halluc_feat], dim=-1)
 
-            # Inference through frozen gp1 → projection → gp2
-            h1_list = [self.gp1(cam_feat)[0].unsqueeze(-1) for _ in range(self.latent_dim1)]
-            h1_mean = torch.cat(h1_list, dim=-1)
-            h2_input = self.projection(h1_mean)
-
-            mean, var = self.gp2(h2_input, full_cov=False)
+            mean, var = self.gp(cam_feat, full_cov=False)
             acquisition = mean + beta * var.sqrt()
             loss = -acquisition
             loss.backward()
@@ -218,7 +159,6 @@ class VDGPFisherNBVSelector(Module):
         final_uv = (u.item(), v.item())
         final_center = uv2car_torch(u.detach(), v.detach()).squeeze(0) * radius
         return final_center, final_uv
-
 
 
 class GPFeatureExtractor(torch.nn.Sequential):
