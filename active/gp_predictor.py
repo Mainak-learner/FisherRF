@@ -20,7 +20,7 @@ from gpytorch.likelihoods import GaussianLikelihood
 import torch.nn.functional as F
 
 class VDGPFisherNBVSelector(Module):
-    def __init__(self, args, input_dim, encoder: nn.Module, phi_pose_to_feat: nn.Module, hidden_dim=32, num_inducing=64, device="cuda"):
+    def __init__(self, args, input_dim, encoder: nn.Module, phi_pose_to_feat: nn.Module, hidden_dim=32, num_inducing=32, device="cuda"):
         super().__init__()
         self.device = device
         self.input_dim = input_dim  # pose_dim + halluc_feat_dim
@@ -39,7 +39,7 @@ class VDGPFisherNBVSelector(Module):
         name2idx = {"xyz": 0, "rgb": 1, "sh": 2, "scale": 3, "rotation": 4, "opacity": 5}
         self.filter_out_idx = [name2idx[k] for k in args.filter_out_grad]
 
-        self.latent_dim1 = 8
+        self.latent_dim1 = 4
 
         self.gp1 = gp.models.VariationalSparseGP(
             X=torch.empty(0, input_dim).to(device),
