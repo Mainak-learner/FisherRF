@@ -81,6 +81,20 @@ class VDGPFisherNBVSelector(Module):
             likelihood=gp.likelihoods.Gaussian(),
         )
 
+        # Freeze all but gp3 and projection2
+        for param in self.gp1.parameters():
+            param.requires_grad = False
+        for param in self.gp2.parameters():
+            param.requires_grad = False
+        for param in self.projection.parameters():
+            param.requires_grad = False
+
+        # Allow training for gp3 and projection2
+        for param in self.gp3.parameters():
+            param.requires_grad = True
+        for param in self.projection2.parameters():
+            param.requires_grad = True
+
     def model(self):
         pyro.module("gp3", self.gp3)
 
