@@ -72,19 +72,40 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
     np.save("oracle_gt_visualization/object_points.npy", oracle_gaussians.get_xyz.detach().cpu().numpy())
     np.save("oracle_gt_visualization/object_colors.npy", oracle_gaussians._features_dc.detach().cpu().numpy())
 
-    oracle_image_paths = []
     selected_middle_centers = []
-    for i,idx in enumerate(middle_ids):
+    oracle_image_paths = []
+    selected_cams = []
+
+    # Start with the first index
+    selected_indices = [middle_ids[0]]
+    selected_middle_centers.append(all_centers[middle_ids[0]].cpu().numpy().tolist())
+
+    while len(selected_indices) < len(middle_ids):
+        selected = torch.stack([all_centers[idx] for idx in selected_indices])  # (S, 3)
+        remaining = list(set(middle_ids) - set(selected_indices))
+
+        # Compute distance of each remaining point to the closest selected point
+        dists = []
+        for idx in remaining:
+            candidate = all_centers[idx].unsqueeze(0)  # (1, 3)
+            dist = torch.cdist(candidate, selected).min().item()
+            dists.append((dist, idx))
+        
+        # Pick the one with maximum min-distance
+        _, next_idx = max(dists, key=lambda x: x[0])
+        selected_indices.append(next_idx)
+        selected_middle_centers.append(all_centers[next_idx].cpu().numpy().tolist())
+
+    # Now render and save images for each selected index
+    for i, idx in enumerate(selected_indices):
         cam_center = all_centers[idx]
         gt_img = render_with_oracle(cam_center, object_center, pipe, oracle_gaussians, torch.tensor([1.0, 1.0, 1.0], device="cuda"), reference_camera)
         img_path = f"oracle_gt_visualization/pose_{i}.png"
         TF.to_pil_image(gt_img.clamp(0, 1).cpu()).save(img_path)
 
-        # Encode to base64
         oracle_image_paths.append(f"pose_{i}.png")
         dummy_camera = DummyCamera(*look_at(cam_center.detach(), object_center.detach()), reference_camera, image=gt_img.detach())
         print(f"cam_center:{cam_center}, dummy_cam_center:{dummy_camera.camera_center}") 
-        selected_middle_centers.append(cam_center.cpu().numpy().tolist())
         selected_cams.append(dummy_camera)
 
     background = torch.tensor([1.0, 1.0, 1.0], dtype=torch.float32, device="cuda")
