@@ -46,6 +46,9 @@ class VDGPFisherNBVSelector(Module):
             likelihood=gp.likelihoods.Gaussian()
         )
 
+        self.gp.X = self.gp.X.to(self.device)
+        self.gp.Xu = self.gp.Xu.to(self.device)
+
     def model(self):
         pyro.module("gp", self.gp)
         self.gp.set_data(X=self.X_train_feat, y=self.y_train)
@@ -112,7 +115,13 @@ class VDGPFisherNBVSelector(Module):
             halluc_feats = self.phi_pose_to_feat(self.X_train)
             self.X_train_feat = torch.cat([self.X_train, halluc_feats], dim=-1)
 
-        self.gp.set_data(X=self.X_train_feat, y=self.y_train)
+        # Ensure internal GP data tensors are on the same device
+        self.gp.set_data(X=self.X_train_feat, y=self.y_train)  # <- add this
+        self.gp.X = self.gp.X.to(self.device)
+        self.gp.Xu = self.gp.Xu.to(self.device)
+        for p in self.gp.parameters():
+            if p.data.device != self.device:
+                p.data = p.data.to(self.device)        
         self.gp.num_data = self.y_train.size(0)
 
         optimizer = pyro.optim.Adam({"lr": lr})
