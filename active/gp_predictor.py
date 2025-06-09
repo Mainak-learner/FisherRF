@@ -155,6 +155,16 @@ class VDGPFisherNBVSelector(Module):
         # Set inputs for GP1 (feature GP)
         self.gp1.set_data(X=self.X_train_feat, y=None)
 
+        # Run gp1 → projection
+        with torch.no_grad():
+            h1_list = [self.gp1(self.X_train_feat)[0].unsqueeze(-1) for _ in range(self.latent_dim1)]
+            h1_mean = torch.cat(h1_list, dim=-1)
+            h2_input = self.projection(h1_mean)
+
+        # Set inputs for gp2
+        self.gp2.set_data(X=h2_input, y=self.y_train)
+        self.gp2.num_data = self.y_train.size(0)
+
         optimizer = pyro.optim.Adam({"lr": lr})
         svi = pyro.infer.SVI(model=self.model, guide=self.guide, optim=optimizer, loss=pyro.infer.Trace_ELBO())
 
