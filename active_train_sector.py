@@ -213,7 +213,6 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
             selector = VDGPFisherNBVSelector(
                 args,
                 input_dim=pose_feat_dim + image_feat_dim,  # total input dim to GP1
-                encoder=None,  # not used at runtime
                 phi_pose_to_feat=phi,
                 device="cuda"
             ) 
