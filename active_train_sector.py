@@ -196,8 +196,9 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
             dummy = DummyCamera(*look_at(cam_center.detach(), object_center.detach()), reference_camera)
             rgb = render_with_oracle(cam_center, object_center, pipe, oracle_gaussians, background, reference_camera)
             dummy.original_image = rgb.detach().clamp(0, 1).cuda()
+            render_pkg = render(dummy, gaussians, pipe, background)
             candidate_cams.append(dummy)
-            candidate_images.append(rgb)
+            candidate_images.append(render_pkg["render"])
 
         # sector_ref_imgs = []
         # for idx in sector_indices:
