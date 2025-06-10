@@ -150,7 +150,8 @@ class VDGPFisherNBVSelector(Module):
 
         with torch.no_grad():
             halluc_feats = self.phi_pose_to_feat(self.X_train).to(self.device)
-            self.X_train_feat = torch.cat([self.X_train, halluc_feats], dim=-1)
+            # self.X_train_feat = torch.cat([self.X_train, halluc_feats], dim=-1)
+            self.X_train_feat = self.X_train
 
         # Set inputs for GP1 (feature GP)
         self.gp1.set_data(X=self.X_train_feat, y=None)
@@ -199,7 +200,8 @@ class VDGPFisherNBVSelector(Module):
 
             with torch.no_grad():
                 halluc_feat = self.phi_pose_to_feat(cam_center)
-                cam_feat = torch.cat([cam_center, halluc_feat], dim=-1)
+                # cam_feat = torch.cat([cam_center, halluc_feat], dim=-1)
+                cam_feat = cam_center
 
             # Inference through frozen gp1 → projection → gp2
             h1_list = [self.gp1(cam_feat)[0].unsqueeze(-1) for _ in range(self.latent_dim1)]

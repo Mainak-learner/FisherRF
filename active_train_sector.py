@@ -234,7 +234,7 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
             phi.eval()
             selector = VDGPFisherNBVSelector(
                 args,
-                input_dim=pose_feat_dim + image_feat_dim,  # total input dim to GP1
+                input_dim=pose_feat_dim,  # total input dim to GP1
                 phi_pose_to_feat=phi,
                 device="cuda"
             ) 
