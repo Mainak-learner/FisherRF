@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from active.encoders import ImageEncoder, PoseToImageEncoder
+from active.encoders import ImageEncoder, PoseToImageEncoder, PoseToImageSIREN
 
 #To Prevent OOM issue:
 def encode_images_in_batches(image_encoder, image_tensor, batch_size=4):
@@ -22,7 +22,7 @@ def train_phi_sector(pose_tensor, image_tensor, device="cuda", pose_dim=3, image
 
     image_feats = encode_images_in_batches(image_encoder=image_encoder, image_tensor=image_tensor)
 
-    phi = PoseToImageEncoder(pose_dim=pose_dim, image_feat_dim=image_feat_dim).to(device)
+    phi = PoseToImageSIREN(pose_dim=pose_dim, image_feat_dim=image_feat_dim, omega_0=30.0).to(device)
     optimizer = torch.optim.Adam(phi.parameters(), lr=1e-3)
     loss_fn = nn.MSELoss()
 

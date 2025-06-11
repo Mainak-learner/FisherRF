@@ -28,3 +28,16 @@ class PoseToImageEncoder(nn.Module):
 
     def forward(self, poses):
         return self.net(poses)
+    
+class PoseToImageSIREN(nn.Module):
+    def __init__(self, pose_dim=3, image_feat_dim=128, hidden_dim=256, omega_0=30.0):
+        super().__init__()
+        self.omega_0 = omega_0
+        self.fc1 = nn.Linear(pose_dim, hidden_dim)
+        self.fc2 = nn.Linear(hidden_dim, hidden_dim)
+        self.fc3 = nn.Linear(hidden_dim, image_feat_dim)
+
+    def forward(self, x):
+        x = torch.sin(self.omega_0 * self.fc1(x))
+        x = torch.sin(self.omega_0 * self.fc2(x))
+        return self.fc3(x)
