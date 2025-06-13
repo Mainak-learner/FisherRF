@@ -181,10 +181,6 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
         u_bounds = (min(u_vals), max(u_vals))
         v_bounds = (min(v_vals), max(v_vals))
 
-        # Select the most uncertain proposal
-        max_unc_idx = torch.argmax(uncertainties).item()
-        most_uncertain_uv = proposal_uvs[max_unc_idx]
-
         # Step 1: Render candidate images
         candidate_cams, candidate_images = [], []
         for cam_center in proposal_centers:
