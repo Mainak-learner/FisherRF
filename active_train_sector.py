@@ -232,6 +232,9 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
             # Compute Fisher-trace based uncertainty at proposal poses
             uncertainties = selector.compute_fisher_uncertainty(gaussians, selected_cams, candidate_cams, pipe, background)
 
+            # Select the most uncertain proposal
+            max_unc_idx = torch.argmax(uncertainties).item()
+            most_uncertain_uv = proposal_uvs[max_unc_idx]
             # Apply small random perturbation
             u_perturbed = most_uncertain_uv[0] + np.random.uniform(-0.02, 0.02)
             v_perturbed = most_uncertain_uv[1] + np.random.uniform(-0.02, 0.02)
@@ -263,6 +266,9 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
             # Compute Fisher-trace based uncertainty at proposal poses
             uncertainties = selector.compute_fisher_uncertainty(gaussians, selected_cams, candidate_cams, pipe, background)
 
+            # Select the most uncertain proposal
+            max_unc_idx = torch.argmax(uncertainties).item()
+            most_uncertain_uv = proposal_uvs[max_unc_idx]
             # Apply small random perturbation
             u_perturbed = most_uncertain_uv[0] + np.random.uniform(-0.02, 0.02)
             v_perturbed = most_uncertain_uv[1] + np.random.uniform(-0.02, 0.02)
