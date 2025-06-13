@@ -185,20 +185,6 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
         max_unc_idx = torch.argmax(uncertainties).item()
         most_uncertain_uv = proposal_uvs[max_unc_idx]
 
-        # Apply small random perturbation
-        u_perturbed = most_uncertain_uv[0] + np.random.uniform(-0.02, 0.02)
-        v_perturbed = most_uncertain_uv[1] + np.random.uniform(-0.02, 0.02)
-
-        # Clamp to sector bounds
-        u_min, u_max = u_bounds
-        v_min, v_max = v_bounds
-
-        u_perturbed = np.clip(u_perturbed, u_min, u_max)
-        v_perturbed = np.clip(v_perturbed, v_min, v_max)
-
-        init_pose = (u_perturbed, v_perturbed)
-        sector_init_poses.append(proposal_centers[max_unc_idx].detach().cpu().numpy())
-
         # Step 1: Render candidate images
         candidate_cams, candidate_images = [], []
         for cam_center in proposal_centers:
@@ -249,6 +235,20 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
             ) 
             # Compute Fisher-trace based uncertainty at proposal poses
             uncertainties = selector.compute_fisher_uncertainty(gaussians, selected_cams, candidate_cams, pipe, background)
+
+            # Apply small random perturbation
+            u_perturbed = most_uncertain_uv[0] + np.random.uniform(-0.02, 0.02)
+            v_perturbed = most_uncertain_uv[1] + np.random.uniform(-0.02, 0.02)
+
+            # Clamp to sector bounds
+            u_min, u_max = u_bounds
+            v_min, v_max = v_bounds
+
+            u_perturbed = np.clip(u_perturbed, u_min, u_max)
+            v_perturbed = np.clip(v_perturbed, v_min, v_max)
+
+            init_pose = (u_perturbed, v_perturbed)
+            sector_init_poses.append(proposal_centers[max_unc_idx].detach().cpu().numpy())
             center_opt, uv_opt = selector.optimize_gp_posterior_vdgp(
                 proposal_uvs=[all_uvs[i] for i in sector_indices],
                 proposal_centers=[all_centers[i].cpu().numpy() for i in sector_indices],
@@ -266,6 +266,20 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
         elif args.deepkgp:
             # Compute Fisher-trace based uncertainty at proposal poses
             uncertainties = selector.compute_fisher_uncertainty(gaussians, selected_cams, candidate_cams, pipe, background)
+
+            # Apply small random perturbation
+            u_perturbed = most_uncertain_uv[0] + np.random.uniform(-0.02, 0.02)
+            v_perturbed = most_uncertain_uv[1] + np.random.uniform(-0.02, 0.02)
+
+            # Clamp to sector bounds
+            u_min, u_max = u_bounds
+            v_min, v_max = v_bounds
+
+            u_perturbed = np.clip(u_perturbed, u_min, u_max)
+            v_perturbed = np.clip(v_perturbed, v_min, v_max)
+
+            init_pose = (u_perturbed, v_perturbed)
+            sector_init_poses.append(proposal_centers[max_unc_idx].detach().cpu().numpy())
             center_opt, uv_opt = selector.optimize_gp_posterior_dkl(
                 proposal_uvs=[all_uvs[i] for i in sector_indices],
                 proposal_centers=[all_centers[i].cpu().numpy() for i in sector_indices],
