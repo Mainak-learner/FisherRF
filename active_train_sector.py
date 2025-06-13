@@ -175,20 +175,29 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
         proposal_uvs = [all_uvs[idx] for idx in sector_indices]
         proposal_centers = all_centers[sector_indices]
 
-        #Init Pose
-        mean_center = proposal_centers.mean(0)
-        dir_vec = mean_center
-        dir_vec = (dir_vec/torch.norm(dir_vec).item())
-        u = (np.arctan2(dir_vec[1].item(), dir_vec[0].item()) / (2 * np.pi)) % 1.0
-        v = np.arccos(dir_vec[2].item()) / np.pi
-        init_pose = (u, v) 
-
-        sector_init_poses.append(mean_center.detach().cpu().numpy())
         u_vals = [uv[0] for uv in proposal_uvs]
         v_vals = [uv[1] for uv in proposal_uvs]
 
         u_bounds = (min(u_vals), max(u_vals))
         v_bounds = (min(v_vals), max(v_vals))
+
+        # Select the most uncertain proposal
+        max_unc_idx = torch.argmax(uncertainties).item()
+        most_uncertain_uv = proposal_uvs[max_unc_idx]
+
+        # Apply small random perturbation
+        u_perturbed = most_uncertain_uv[0] + np.random.uniform(-0.02, 0.02)
+        v_perturbed = most_uncertain_uv[1] + np.random.uniform(-0.02, 0.02)
+
+        # Clamp to sector bounds
+        u_min, u_max = u_bounds
+        v_min, v_max = v_bounds
+
+        u_perturbed = np.clip(u_perturbed, u_min, u_max)
+        v_perturbed = np.clip(v_perturbed, v_min, v_max)
+
+        init_pose = (u_perturbed, v_perturbed)
+        sector_init_poses.append(proposal_centers[max_unc_idx].detach().cpu().numpy())
 
         # Step 1: Render candidate images
         candidate_cams, candidate_images = [], []
