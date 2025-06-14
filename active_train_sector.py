@@ -320,7 +320,7 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
         # TF.to_pil_image(oracle_img.clamp(0, 1).cpu()).save(img_path)
     
     print(f"Sector selections: {len(sector_selections)}")
-    selected_cams = sector_selections
+    selected_cams = sector_selections + selected_cams
     print(f"Selected 12 more training views. Final phase of training begins now...")
 
     filenames = [f"oracle_gt_visualization/pose_{i}.png" for i in range(len(selected_cams))]
@@ -332,7 +332,7 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
     np.save("oracle_gt_visualization/proposal_pose_centers.npy", proposal_pose_centers)
     np.save("oracle_gt_visualization/init_poses.npy", sector_init_poses)
 
-    for iteration in tqdm(range(args.initial_train, args.iterations + 1), desc="Full Training Loop"):
+    for iteration in tqdm(range(1, args.iterations + 1), desc="Full Training Loop"):
         gaussians.update_learning_rate(iteration)
 
         if iteration % 1000 == 0:
