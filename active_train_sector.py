@@ -64,6 +64,13 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
     all_centers, all_uvs, pose_per_circle = generate_circular_hemisphere_poses(torch.tensor([0, 0, 0], device=object_center.device), num_circles=args.num_circles, min_poses=args.min_poses, radius=sample_radius)
     circle_indices, middle_circle_indices, sector_map = divide_hemisphere_poses(all_centers, object_center.cpu().numpy(), pose_per_circle, num_circles=args.num_circles)
 
+    for i, cam_center in enumerate(tqdm(all_centers, desc="Rendering Oracle GT Images")):
+        R, T = look_at(cam_center.detach(), oracle_gaussians.get_xyz.mean(dim=0).detach())
+        dummy_cam = DummyCamera(R, T, reference_camera)
+        img = render(dummy_cam, oracle_gaussians, None, background)["render"].clamp(0, 1)
+        img_path = f"oracle_gt_visualization/proposal_pose_{i}.png"
+        TF.to_pil_image(img.cpu()).save(img_path)
+
     middle_ids = np.random.choice(middle_circle_indices, size=6, replace=False)
     selected_cams = []
 
