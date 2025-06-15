@@ -9,12 +9,6 @@ from PIL import Image
 from tqdm import tqdm
 import numpy as np
 
-from scene import Scene, GaussianModel
-from gaussian_renderer import render
-from utils.camera_utils import look_at
-from scene.cameras import DummyCamera
-from utils.general_utils import safe_state
-
 class ImageDataset(Dataset):
     def __init__(self, image_dir, transform=None):
         self.image_dir = image_dir
@@ -57,18 +51,6 @@ class Autoencoder(nn.Module):
         out = self.decoder(z)
         return out
 
-def generate_oracle_images(output_dir, model_path, reference_camera, all_centers, background):
-    os.makedirs(output_dir, exist_ok=True)
-    oracle_gaussians = GaussianModel(sh_degree=3)  # Adjust if needed
-    oracle_gaussians.load_ply(os.path.join(model_path, "point_cloud/iteration_30000/point_cloud.ply"))
-
-    for i, cam_center in enumerate(tqdm(all_centers, desc="Rendering Oracle GT Images")):
-        R, T = look_at(cam_center.detach(), oracle_gaussians.get_xyz.mean(dim=0).detach())
-        dummy_cam = DummyCamera(R, T, reference_camera)
-        img = render(dummy_cam, oracle_gaussians, None, background)["render"].clamp(0, 1)
-        img_pil = transforms.ToPILImage()(img.cpu())
-        img_pil.save(os.path.join(output_dir, f"pose_{i}.png"))
-
 def train_autoencoder(image_dir, latent_dim=128, batch_size=32, epochs=20, lr=1e-3, device="cuda"):
     transform = transforms.Compose([
         transforms.Resize((32, 32)),
@@ -82,9 +64,11 @@ def train_autoencoder(image_dir, latent_dim=128, batch_size=32, epochs=20, lr=1e
     optimizer = optim.Adam(model.parameters(), lr=lr)
     criterion = nn.MSELoss()
 
+    best_loss = float('inf')
+
     for epoch in range(epochs):
         total_loss = 0
-        for images in tqdm(dataloader, desc=f"Epoch {epoch+1}/{epochs}"):
+        for images in tqdm(dataloader, desc=f"Epoch {epoch+1}/{epochs} (Latent {latent_dim})"):
             images = images.to(device)
             recon = model(images)
             loss = criterion(recon, images)
@@ -95,24 +79,25 @@ def train_autoencoder(image_dir, latent_dim=128, batch_size=32, epochs=20, lr=1e
 
             total_loss += loss.item()
 
-        print(f"Epoch {epoch+1}, Loss: {total_loss/len(dataloader):.4f}")
+        avg_loss = total_loss / len(dataloader)
+        print(f"Latent {latent_dim} | Epoch {epoch+1}, Loss: {avg_loss:.4f}")
 
-    torch.save(model.state_dict(), f"autoencoder_latent{latent_dim}.pth")
+        if avg_loss < best_loss:
+            best_loss = avg_loss
+            torch.save(model.state_dict(), f"autoencoder_latent{latent_dim}.pth")
+
+    return best_loss
 
 if __name__ == "__main__":
     image_dir = "oracle_gt_visualization"
-    model_path = "oracle_model_path_here"
-    background = torch.tensor([1.0, 1.0, 1.0], dtype=torch.float32, device="cuda")
+    latent_dims = [16, 32, 64, 128, 256, 512]
+    all_losses = {}
 
-    # Setup dummy dataset for scene info (just to extract reference_camera and pose info)
-    dummy_scene = Scene(None, GaussianModel(3))  # assumes Scene doesn't fail on None dataset
-    reference_camera = dummy_scene.getAllCameras()[0]
+    for latent_dim in latent_dims:
+        print(f"\n--- Training autoencoder with latent dim {latent_dim} ---")
+        loss = train_autoencoder(image_dir=image_dir, latent_dim=latent_dim)
+        all_losses[latent_dim] = loss
 
-    # Load proposal pose centers
-    all_centers = torch.tensor(np.load("oracle_gt_visualization/proposal_pose_centers.npy"), dtype=torch.float32, device="cuda")
-
-    # Step 1: Generate images using oracle model
-    generate_oracle_images(image_dir, model_path, reference_camera, all_centers, background)
-
-    # Step 2: Train autoencoder
-    train_autoencoder(image_dir=image_dir, latent_dim=128)
+    print("\nSummary of reconstruction losses:")
+    for dim, loss in all_losses.items():
+        print(f"Latent Dim {dim}: Loss = {loss:.4f}")
