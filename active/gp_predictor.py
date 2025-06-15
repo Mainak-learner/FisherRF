@@ -223,11 +223,11 @@ class VDGPFisherNBVSelector(Module):
 class GPFeatureExtractor(torch.nn.Sequential):
     def __init__(self, input_dim):
         super().__init__(
-            torch.nn.Linear(input_dim, 128),
-            torch.nn.ReLU(),
-            torch.nn.Linear(128, 64),
-            torch.nn.ReLU(),
-            torch.nn.Linear(64, 32),
+            nn.Linear(input_dim, 256),   # Wider first layer for more flexibility
+            nn.ReLU(),
+            nn.Linear(256, 128),
+            nn.ReLU(),
+            nn.Linear(128, 64),          # Final output for GP kernel input
         )
 
 class DeepGPModel(ExactGP):
