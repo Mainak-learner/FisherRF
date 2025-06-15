@@ -63,7 +63,11 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
 
     all_centers, all_uvs, pose_per_circle = generate_circular_hemisphere_poses(torch.tensor([0, 0, 0], device=object_center.device), num_circles=args.num_circles, min_poses=args.min_poses, radius=sample_radius)
     circle_indices, middle_circle_indices, sector_map = divide_hemisphere_poses(all_centers, object_center.cpu().numpy(), pose_per_circle, num_circles=args.num_circles)
-
+    
+    os.makedirs("oracle_gt_visualization", exist_ok=True)
+    np.save("oracle_gt_visualization/object_center.npy", object_center.cpu().numpy())
+    np.save("oracle_gt_visualization/object_points.npy", oracle_gaussians.get_xyz.detach().cpu().numpy())
+    np.save("oracle_gt_visualization/object_colors.npy", oracle_gaussians._features_dc.detach().cpu().numpy())
     for idx, cam_center in enumerate(tqdm(all_centers, desc="Rendering Oracle GT Images")):
         cam_center = all_centers[idx]
         gt_img = render_with_oracle(cam_center, object_center, pipe, oracle_gaussians, torch.tensor([1.0, 1.0, 1.0], device="cuda"), reference_camera)
@@ -72,11 +76,6 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
 
     middle_ids = np.random.choice(middle_circle_indices, size=6, replace=False)
     selected_cams = []
-
-    os.makedirs("oracle_gt_visualization", exist_ok=True)
-    np.save("oracle_gt_visualization/object_center.npy", object_center.cpu().numpy())
-    np.save("oracle_gt_visualization/object_points.npy", oracle_gaussians.get_xyz.detach().cpu().numpy())
-    np.save("oracle_gt_visualization/object_colors.npy", oracle_gaussians._features_dc.detach().cpu().numpy())
 
     selected_middle_centers = []
     oracle_image_paths = []
