@@ -14,7 +14,7 @@ from utils.loss_utils import l1_loss, ssim
 from utils.image_utils import psnr
 from lpipsPyTorch import lpips_func
 from active.lpips_selector import LPIPSNBVSelector
-from active.encoders import PoseToImageEncoder
+from active.encoders import ImageEncoder, PoseToImageEncoder
 from scene.sector_pose_gen import generate_circular_hemisphere_poses, divide_hemisphere_poses
 from utils.camera_utils import look_at, look_at_torch
 from utils.graphics_utils import uv2car_torch
@@ -287,6 +287,9 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
 
             init_pose = (u_perturbed, v_perturbed)
             sector_init_poses.append(proposal_centers[max_unc_idx].detach().cpu().numpy())
+
+            image_encoder = ImageEncoder(output_dim=128).to(device = "cuda")
+
             center_opt, uv_opt = selector.optimize_gp_posterior_dkl(
                 proposal_uvs=[all_uvs[i] for i in sector_indices],
                 proposal_centers=[all_centers[i].cpu().numpy() for i in sector_indices],
@@ -294,6 +297,13 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
                 init_uv=init_pose,
                 uv_bounds=(u_bounds, v_bounds),
                 radius=sample_radius,
+                selected_cameras = selected_cams + sector_selections,
+                gaussians=gaussians,
+                pipe=pipe,
+                background=background,
+                reference_camera=reference_camera,
+                render_fn = render_fn,
+                image_encoder = image_encoder,
                 steps=args.pose_optim_steps,
                 lr=args.pose_lr
             )

@@ -267,6 +267,23 @@ class GPFisherNBVSelector(Module):
         name2idx = {"xyz": 0, "rgb": 1, "sh": 2, "scale": 3, "rotation": 4, "opacity": 5}
         self.filter_out_idx: List[str] = [name2idx[k] for k in args.filter_out_grad]
 
+    def compute_consistency_score(self, candidate_img, reference_imgs):
+        """
+        Args:
+            candidate_img: (1, 3, H, W) tensor
+            reference_imgs: list of (1, 3, H, W) tensors
+        Returns:
+            max cosine similarity between candidate and references
+        """
+        with torch.no_grad():
+            cand_feat = self.resnet_feat(candidate_img).squeeze(-1).squeeze(-1)  # [1, 512]
+            max_sim = -float("inf")
+            for ref_img in reference_imgs:
+                ref_feat = self.resnet_feat(ref_img).squeeze(-1).squeeze(-1)  # [1, 512]
+                sim = F.cosine_similarity(cand_feat, ref_feat, dim=1)  # [1]
+                max_sim = max(max_sim, sim.item())
+        return max_sim  # higher = more overlap
+
     def train_dkl_gp(self, X_train, y_train, steps=200):
         X_train = X_train.to(self.device)
         y_train = y_train.squeeze().to(self.device)
@@ -399,18 +416,41 @@ class GPFisherNBVSelector(Module):
         final_center = uv2car_torch(u.detach(), v.detach()).squeeze(0) * radius
         return final_center, final_uv
 
-    def optimize_gp_posterior_dkl(self, proposal_uvs, proposal_centers, uncertainties, init_uv, uv_bounds, radius, steps=100, lr=1e-2):
+    def optimize_gp_posterior_dkl(
+        self,
+        proposal_uvs,
+        proposal_centers,
+        uncertainties,
+        init_uv,
+        uv_bounds,
+        radius,
+        object_center,
+        selected_cameras,
+        gaussians,
+        pipe,
+        background,
+        reference_camera,
+        render_fn,
+        image_encoder,
+        steps=100,
+        lr=1e-2,
+    ):
         """
-        Optimizes the GP posterior mean over the hemisphere using Deep Kernel Learning (DKL).
+        Optimizes GP posterior mean over the hemisphere using Deep Kernel Learning,
+        with cosine similarity to past views included.
+
         Args:
-            proposal_uvs: (N, 2) tensor of proposal (u, v) angles
-            proposal_centers: (N, 3) tensor of world camera centers (training inputs)
-            uncertainties: (N,) tensor of target uncertainties
-            init_uv: (u, v) tuple - starting point for optimization
-            uv_bounds: ((u_min, u_max), (v_min, v_max)) bounds for search
-            radius: float - fixed distance to project camera center
-            steps: int - number of optimization steps
-            lr: float - learning rate
+            proposal_uvs: list of (u, v) tuples
+            proposal_centers: list of (3,) world camera centers
+            uncertainties: (N,) tensor of uncertainty values
+            init_uv: (u, v) starting point
+            uv_bounds: ((u_min, u_max), (v_min, v_max))
+            radius: float camera radius
+            object_center: (3,) tensor
+            selected_cameras: list of DummyCamera with .original_image
+            gaussians, pipe, background, reference_camera: rendering components
+            image_encoder: instance of ImageEncoder
+            steps, lr: optimization parameters
         Returns:
             optimized_cam_center: (3,) tensor
             optimized_uv: (u, v) tuple
@@ -419,40 +459,51 @@ class GPFisherNBVSelector(Module):
         u_min, u_max = uv_bounds[0]
         v_min, v_max = uv_bounds[1]
 
-        # Create training data tensors
+        # Prepare GP training data
         X_train = torch.tensor(proposal_centers, dtype=torch.float32, device=device)
-        y_train = uncertainties.to(device).squeeze()  # (N,)
+        y_train = uncertainties.to(device).squeeze()
 
-        # Train the DKL GP model
-        self.train_dkl_gp(X_train, y_train)  # sets self.model and self.likelihood
+        self.train_dkl_gp(X_train, y_train)
+        self.model.eval()
+        self.likelihood.eval()
+        image_encoder.eval()
 
-        # Initialize UV parameters to optimize
+        # Optimize in uv-space
         u = torch.tensor([init_uv[0]], device=device, dtype=torch.float32, requires_grad=True)
         v = torch.tensor([init_uv[1]], device=device, dtype=torch.float32, requires_grad=True)
         uv_optimizer = torch.optim.Adam([u, v], lr=lr)
 
-        self.model.eval()
-        self.likelihood.eval()
+        # Prepare features from selected views
+        ref_imgs = [F.interpolate(cam.original_image.unsqueeze(0), size=(224, 224)) for cam in selected_cameras]
+        ref_imgs = torch.cat(ref_imgs, dim=0).to(device)  # (B, 3, 224, 224)
+        with torch.no_grad():
+            ref_feats = F.normalize(image_encoder(ref_imgs), dim=1)  # (B, D)
 
         for _ in range(steps):
             uv_optimizer.zero_grad()
 
-            # Convert (u, v) to (x, y, z) camera center
             cam_center = uv2car_torch(u, v) * radius  # (1, 3)
 
-            # Query GP prediction at this cam center
             with gpytorch.settings.fast_pred_var():
                 pred = self.model(cam_center)
-                mu = pred.mean  # (1,)
+                mu = pred.mean
                 sigma = pred.variance.sqrt()
 
-            # Maximize the mean => minimize negative
-            acquisition = mu + self.ucb_beta * sigma
+            # Render current pose
+            rendered = render_fn(cam_center.squeeze(0), object_center, pipe, gaussians, background, reference_camera).clamp(0, 1)
+            rendered = F.interpolate(rendered.unsqueeze(0), size=(224, 224), mode="bilinear", align_corners=False)
+
+            with torch.no_grad():
+                test_feat = F.normalize(image_encoder(rendered), dim=1)  # (1, D)
+
+            sim_score = F.cosine_similarity(test_feat, ref_feats, dim=1).mean()
+
+            # Combined acquisition (tune self.ucb_beta and self.sim_lambda)
+            acquisition = mu + self.ucb_beta * sigma + self.sim_lambda * sim_score
             loss = -acquisition
             loss.backward()
             uv_optimizer.step()
 
-            # Clamp UV values
             u.data.clamp_(u_min, u_max)
             v.data.clamp_(v_min, v_max)
 
