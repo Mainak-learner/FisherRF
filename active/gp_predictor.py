@@ -256,6 +256,7 @@ class GPFisherNBVSelector(Module):
         self.reg_lambda = args.reg_lambda
         self.I_test: bool = args.I_test
         self.I_acq_reg: bool = args.I_acq_reg
+        self.sim_lambda = 0.3
 
         #Deep GP:
         if args.deepkgp:
