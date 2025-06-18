@@ -297,6 +297,7 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
                 init_uv=init_pose,
                 uv_bounds=(u_bounds, v_bounds),
                 radius=sample_radius,
+                object_center=object_center,
                 selected_cameras = selected_cams + sector_selections,
                 gaussians=gaussians,
                 pipe=pipe,
