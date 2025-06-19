@@ -494,13 +494,11 @@ class GPFisherNBVSelector(Module):
             rendered = render_fn(cam_center.squeeze(0), object_center, pipe, gaussians, background, reference_camera).clamp(0, 1)
             rendered = F.interpolate(rendered.unsqueeze(0), size=(224, 224), mode="bilinear", align_corners=False)
 
-            with torch.no_grad():
-                test_feat = F.normalize(image_encoder(rendered), dim=1)  # (1, D)
-
+            test_feat = F.normalize(image_encoder(rendered), dim=1)  # (1, D)
             sim_score = F.cosine_similarity(test_feat, ref_feats, dim=1).mean()
 
             # Combined acquisition (tune self.ucb_beta and self.sim_lambda)
-            acquisition = mu + self.ucb_beta * sigma + self.sim_lambda * sim_score
+            acquisition = (mu + self.ucb_beta * sigma) * (self.sim_lambda * sim_score / (1 + sigma))
             loss = -acquisition
             loss.backward()
             uv_optimizer.step()
