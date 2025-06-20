@@ -348,6 +348,11 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
     np.save("oracle_gt_visualization/proposal_pose_centers.npy", proposal_pose_centers)
     np.save("oracle_gt_visualization/init_poses.npy", sector_init_poses)
 
+    #reinitialize 3D Gaussians, before final training    
+    gaussians = GaussianModel(dataset.sh_degree)  # Reinitialize
+    scene = Scene(dataset, gaussians) 
+    gaussians.training_setup(opt)  # Reset optimizer
+
     for iteration in tqdm(range(1, args.iterations + 1), desc="Full Training Loop"):
         gaussians.update_learning_rate(iteration)
 
