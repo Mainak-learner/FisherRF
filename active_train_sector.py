@@ -68,11 +68,11 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
     np.save("oracle_gt_visualization/object_center.npy", object_center.cpu().numpy())
     np.save("oracle_gt_visualization/object_points.npy", oracle_gaussians.get_xyz.detach().cpu().numpy())
     np.save("oracle_gt_visualization/object_colors.npy", oracle_gaussians._features_dc.detach().cpu().numpy())
-    for idx, cam_center in enumerate(tqdm(all_centers, desc="Rendering Oracle GT Images")):
-        cam_center = all_centers[idx]
-        gt_img = render_with_oracle(cam_center, object_center, pipe, oracle_gaussians, torch.tensor([1.0, 1.0, 1.0], device="cuda"), reference_camera)
-        img_path = f"oracle_gt_visualization/proposal_pose_{idx}.png"
-        TF.to_pil_image(gt_img.cpu()).save(img_path)
+    # for idx, cam_center in enumerate(tqdm(all_centers, desc="Rendering Oracle GT Images")):
+    #     cam_center = all_centers[idx]
+    #     gt_img = render_with_oracle(cam_center, object_center, pipe, oracle_gaussians, torch.tensor([1.0, 1.0, 1.0], device="cuda"), reference_camera)
+    #     img_path = f"oracle_gt_visualization/proposal_pose_{idx}.png"
+    #     TF.to_pil_image(gt_img.cpu()).save(img_path)
 
     middle_ids = np.random.choice(middle_circle_indices, size=6, replace=False)
     selected_cams = []

@@ -498,7 +498,7 @@ class GPFisherNBVSelector(Module):
             sim_score = F.cosine_similarity(test_feat, ref_feats, dim=1).mean()
 
             # Combined acquisition (tune self.ucb_beta and self.sim_lambda)
-            acquisition = (mu + self.ucb_beta * sigma) * (sim_score / (1 + sigma))
+            acquisition = (mu + self.ucb_beta * sigma) * (self.sim_lambda * sim_score / (1 + sigma))
             loss = -acquisition
             loss.backward()
             uv_optimizer.step()
