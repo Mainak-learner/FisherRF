@@ -268,22 +268,21 @@ class GPFisherNBVSelector(Module):
         name2idx = {"xyz": 0, "rgb": 1, "sh": 2, "scale": 3, "rotation": 4, "opacity": 5}
         self.filter_out_idx: List[str] = [name2idx[k] for k in args.filter_out_grad]
 
-    def compute_consistency_score(self, candidate_img, reference_imgs):
+    def compute_pose_overlap_score(self, new_center, acquired_cameras, sim_tau=0.5):
         """
-        Args:
-            candidate_img: (1, 3, H, W) tensor
-            reference_imgs: list of (1, 3, H, W) tensors
-        Returns:
-            max cosine similarity between candidate and references
+        Differentiable overlap score encouraging NBV proposals to share view overlap with past views.
         """
-        with torch.no_grad():
-            cand_feat = self.resnet_feat(candidate_img).squeeze(-1).squeeze(-1)  # [1, 512]
-            max_sim = -float("inf")
-            for ref_img in reference_imgs:
-                ref_feat = self.resnet_feat(ref_img).squeeze(-1).squeeze(-1)  # [1, 512]
-                sim = F.cosine_similarity(cand_feat, ref_feat, dim=1)  # [1]
-                max_sim = max(max_sim, sim.item())
-        return max_sim  # higher = more overlap
+        if not acquired_cameras:
+            return torch.tensor(0.0, device=new_center.device)
+
+        distances = []
+        for cam in acquired_cameras:
+            center_q = cam.camera_center.detach()
+            dist = torch.norm(new_center - center_q, p=2)
+            distances.append(torch.exp(-dist / sim_tau))
+
+        score_tensor = torch.stack(distances)
+        return torch.logsumexp(score_tensor, dim=0) - np.log(len(distances))
 
     def train_dkl_gp(self, X_train, y_train, steps=200):
         X_train = X_train.to(self.device)
@@ -490,22 +489,15 @@ class GPFisherNBVSelector(Module):
                 mu = pred.mean
                 sigma = pred.variance.sqrt()
 
-            # Render current pose
-            rendered = render_fn(cam_center.squeeze(0), object_center, pipe, gaussians, background, reference_camera).clamp(0, 1)
-            rendered = F.interpolate(rendered.unsqueeze(0), size=(224, 224), mode="bilinear", align_corners=False)
+            # Overlap score based on pose proximity
+            overlap_score = self.compute_pose_overlap_score(cam_center.squeeze(0), selected_cameras)
 
-            test_feat = F.normalize(image_encoder(rendered), dim=1)  # (1, D)
-            sim_score = F.cosine_similarity(test_feat, ref_feats, dim=1).mean()
+            # Weighted acquisition function
+            acquisition = mu + self.ucb_beta * sigma + self.sim_lambda * overlap_score
 
-            # Combined acquisition (tune self.ucb_beta and self.sim_lambda)
-            acquisition = (mu + self.ucb_beta * sigma) * (self.sim_lambda * sim_score / (1 + sigma))
             loss = -acquisition
             loss.backward()
             uv_optimizer.step()
 
             u.data.clamp_(u_min, u_max)
             v.data.clamp_(v_min, v_max)
-
-        final_uv = (u.item(), v.item())
-        final_center = uv2car_torch(u.detach(), v.detach()).squeeze(0) * radius
-        return final_center, final_uv
