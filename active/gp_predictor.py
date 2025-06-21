@@ -501,3 +501,7 @@ class GPFisherNBVSelector(Module):
 
             u.data.clamp_(u_min, u_max)
             v.data.clamp_(v_min, v_max)
+
+        final_uv = (u.item(), v.item())
+        final_center = uv2car_torch(u.detach(), v.detach()).squeeze(0) * radius
+        return final_center, final_uv
