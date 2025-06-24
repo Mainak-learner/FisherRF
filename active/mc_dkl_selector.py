@@ -162,7 +162,7 @@ class MCDKLNBVSelector(nn.Module):
         v_min, v_max = uv_bounds[1]
 
         # Prepare GP training data
-        X_train = torch.tensor(np.array(proposal_centers), dtype=torch.float32, device=device)
+        X_train = torch.stack([pc.detach() if pc.requires_grad else pc for pc in proposal_centers]).float().to(device)
         y_train = uncertainties.to(device).squeeze()
 
         self.train_gp(X_train, y_train)
