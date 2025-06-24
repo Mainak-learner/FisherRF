@@ -23,6 +23,7 @@ from torchvision.utils import save_image
 import base64
 import json
 from PIL import Image
+from active.mc_dkl_selector import MCDKLNBVSelector
 from active.gp_predictor import GPFisherNBVSelector, VDGPFisherNBVSelector
 import torchvision.transforms.functional as TF
 from arguments import ModelParams, PipelineParams, OptimizationParams
@@ -169,7 +170,7 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
         pose_feat_dim = 3  # or 6 if using orientation
         image_feat_dim = 128  # same as Φ output dim   
     else:
-        selector = GPFisherNBVSelector(args, device="cuda")
+        selector = MCDKLNBVSelector(args, dropout_rate=0.1, beta=2.0, device="cuda")
     sector_selections = []
     sector_init_poses=[]
     for sector_id, sector_indices in sector_map.items():
@@ -291,22 +292,13 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
             image_encoder = ImageEncoder(output_dim=128).to(device = "cuda")
 
             center_opt, uv_opt = selector.optimize_gp_posterior_dkl(
-                proposal_uvs=[all_uvs[i] for i in sector_indices],
-                proposal_centers=[all_centers[i].cpu().numpy() for i in sector_indices],
-                uncertainties=uncertainties,  # should be tensor
-                init_uv=init_pose,
-                uv_bounds=(u_bounds, v_bounds),
-                radius=sample_radius,
-                object_center=object_center,
-                selected_cameras = selected_cams + sector_selections,
-                gaussians=gaussians,
-                pipe=pipe,
-                background=background,
-                reference_camera=reference_camera,
-                render_fn = render_fn,
-                image_encoder = image_encoder,
-                steps=args.pose_optim_steps,
-                lr=args.pose_lr
+                proposal_centers=proposal_centers,  # List[(3,)]
+                uncertainties=uncertainties,     # Tensor (N,)
+                init_uv = init_pose,           # Tuple[float, float]
+                uv_bounds=(u_bounds, v_bounds),# Tuple[(u_min, u_max), (v_min, v_max)]
+                radius = sample_radius,# float
+                steps=100,
+                lr=1e-2
             )
             # Create DummyCamera for selected pose
             oracle_img = render_with_oracle(center_opt, object_center, pipe, oracle_gaussians, background, reference_camera)
