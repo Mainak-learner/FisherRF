@@ -388,7 +388,7 @@ class GPFisherNBVSelector(Module):
         v = torch.tensor([init_uv[1]], device=device, dtype=torch.float32, requires_grad=True)
 
         # Prepare training data
-        X_train = torch.tensor(np.array(proposal_centers), dtype=torch.float32, device=device)  # (N, 3)
+        X_train = torch.stack([pc.detach() if pc.requires_grad else pc for pc in proposal_centers]).float().to(device)
         y_train = uncertainties.to(device).unsqueeze(1)  # (N, 1)
 
         # Compute kernel matrix K and its inverse (detached!)
