@@ -127,7 +127,7 @@ class MCDKLNBVSelector(nn.Module):
         self.model.eval()
         self.likelihood.eval()
         preds = []
-        with torch.no_grad(), gpytorch.settings.fast_pred_var():
+        with gpytorch.settings.fast_pred_var():  # ← Keep only this
             for _ in range(T):
                 pred = self.likelihood(self.model(x_test))
                 preds.append(pred.mean.unsqueeze(0))
