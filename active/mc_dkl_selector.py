@@ -53,6 +53,7 @@ class MCDKLNBVSelector(nn.Module):
         self.encoder = DropoutPoseEncoder(dropout_rate=dropout_rate).to(device)
         self.likelihood = GaussianLikelihood().to(device)
         self.model = None
+        self.grad_reg_lambda = 0.3
 
         self.seed = args.seed
         self.reg_lambda = args.reg_lambda
@@ -175,13 +176,19 @@ class MCDKLNBVSelector(nn.Module):
         for _ in range(steps):
             optimizer.zero_grad()
             cam_center = uv2car_torch(u, v) * radius  # (1, 3)
+            cam_center.requires_grad_(True)
+
             mu, sigma = self.predict_with_uncertainty(cam_center)
             acquisition = mu + self.beta * sigma
             loss = -acquisition.mean()
+
+            # Gradient regularization
+            grad = torch.autograd.grad(acquisition.mean(), cam_center, create_graph=True)[0]
+            loss += self.grad_reg_lambda * grad.norm()**2
+
             loss.backward()
             optimizer.step()
 
-            # Clamp UV values
             u.data.clamp_(u_min, u_max)
             v.data.clamp_(v_min, v_max)
 
