@@ -189,7 +189,7 @@ class MCDKLNBVSelector(nn.Module):
             if step > 0:
                 delta_u = u - prev_u
                 delta_v = v - prev_v
-                loss += self.grad_reg_lambda * (delta_u**2 + delta_v**2)
+                loss += self.grad_reg_lambda * (delta_u**2 + delta_v**2).sum()
 
             loss.backward()
             optimizer.step()
