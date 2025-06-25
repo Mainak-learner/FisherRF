@@ -173,24 +173,33 @@ class MCDKLNBVSelector(nn.Module):
         v = torch.tensor([init_uv[1]], requires_grad=True, dtype=torch.float32, device=device)
         optimizer = torch.optim.Adam([u, v], lr=lr)
 
-        for _ in range(steps):
+        # Initialize previous UVs
+        prev_u = u.clone().detach()
+        prev_v = v.clone().detach()
+
+        for step in range(steps):
             optimizer.zero_grad()
-            cam_center = uv2car_torch(u, v) * radius  # (1, 3)
-            cam_center.requires_grad_(True)
+            cam_center = uv2car_torch(u, v) * radius
 
             mu, sigma = self.predict_with_uncertainty(cam_center)
             acquisition = mu + self.beta * sigma
             loss = -acquisition.mean()
 
-            # Gradient regularization
-            grad = torch.autograd.grad(acquisition.mean(), cam_center, create_graph=True)[0]
-            loss += self.grad_reg_lambda * grad.detach().norm()**2
+            # Smoothness regularization across UV updates
+            if step > 0:
+                delta_u = u - prev_u
+                delta_v = v - prev_v
+                loss += self.grad_reg_lambda * (delta_u**2 + delta_v**2)
 
             loss.backward()
             optimizer.step()
 
             u.data.clamp_(u_min, u_max)
             v.data.clamp_(v_min, v_max)
+
+            # Update prev for next step
+            prev_u = u.clone().detach()
+            prev_v = v.clone().detach()
 
         final_uv = (u.item(), v.item())
         final_center = uv2car_torch(u.detach(), v.detach()).squeeze(0) * radius
