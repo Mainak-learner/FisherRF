@@ -123,7 +123,7 @@ class MCDKLNBVSelector(nn.Module):
 
         return torch.tensor(acq_scores, device=params[0].device)
 
-    def predict_with_uncertainty(self, x_test, T=10):
+    def predict_with_uncertainty(self, x_test, T=100):
         self.model.eval()
         self.likelihood.eval()
         preds = []
