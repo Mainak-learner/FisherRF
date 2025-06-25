@@ -184,7 +184,7 @@ class MCDKLNBVSelector(nn.Module):
 
             # Gradient regularization
             grad = torch.autograd.grad(acquisition.mean(), cam_center, create_graph=True)[0]
-            loss += self.grad_reg_lambda * grad.norm()**2
+            loss += self.grad_reg_lambda * grad.detach().norm()**2
 
             loss.backward()
             optimizer.step()
