@@ -53,7 +53,7 @@ class MCDKLNBVSelector(nn.Module):
         self.encoder = DropoutPoseEncoder(dropout_rate=dropout_rate).to(device)
         self.likelihood = GaussianLikelihood().to(device)
         self.model = None
-        self.grad_reg_lambda = 0.3
+        self.grad_reg_lambda = 1e-5
 
         self.seed = args.seed
         self.reg_lambda = args.reg_lambda
