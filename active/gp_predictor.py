@@ -388,7 +388,7 @@ class GPFisherNBVSelector(Module):
         v = torch.tensor([init_uv[1]], device=device, dtype=torch.float32, requires_grad=True)
 
         # Prepare training data
-        X_train = torch.stack([pc.detach() if pc.requires_grad else pc for pc in proposal_centers]).float().to(device)
+        X_train = torch.tensor(np.array(proposal_centers), dtype=torch.float32, device=device)  # (N, 3)
         y_train = uncertainties.to(device).unsqueeze(1)  # (N, 1)
 
         # Compute kernel matrix K and its inverse (detached!)
@@ -434,7 +434,6 @@ class GPFisherNBVSelector(Module):
         image_encoder,
         steps=100,
         lr=1e-2,
-        N_init=5
     ):
         """
         Optimizes GP posterior mean over the hemisphere using Deep Kernel Learning,
@@ -469,59 +468,40 @@ class GPFisherNBVSelector(Module):
         self.likelihood.eval()
         image_encoder.eval()
 
+        # Optimize in uv-space
+        u = torch.tensor([init_uv[0]], device=device, dtype=torch.float32, requires_grad=True)
+        v = torch.tensor([init_uv[1]], device=device, dtype=torch.float32, requires_grad=True)
+        uv_optimizer = torch.optim.Adam([u, v], lr=lr)
+
         # Prepare features from selected views
         ref_imgs = [F.interpolate(cam.original_image.unsqueeze(0), size=(224, 224)) for cam in selected_cameras]
         ref_imgs = torch.cat(ref_imgs, dim=0).to(device)  # (B, 3, 224, 224)
         with torch.no_grad():
             ref_feats = F.normalize(image_encoder(ref_imgs), dim=1)  # (B, D)
 
-        best_acq = float('-inf')
-        best_uv = None
-        best_center = None
+        for _ in range(steps):
+            uv_optimizer.zero_grad()
 
-        for trial in range(N_init):
-            if trial == 0:
-                u_val, v_val = init_uv
-            else:
-                u_val = np.random.uniform(u_min, u_max)
-                v_val = np.random.uniform(v_min, v_max)
+            cam_center = uv2car_torch(u, v) * radius  # (1, 3)
 
-            u = torch.tensor([u_val], device=device, dtype=torch.float32, requires_grad=True)
-            v = torch.tensor([v_val], device=device, dtype=torch.float32, requires_grad=True)
-            uv_optimizer = torch.optim.Adam([u, v], lr=lr)
-
-            for _ in range(steps):
-                uv_optimizer.zero_grad()
-
-                cam_center = uv2car_torch(u, v) * radius  # (1, 3)
-
-                with gpytorch.settings.fast_pred_var():
-                    pred = self.model(cam_center)
-                    mu = pred.mean
-                    sigma = pred.variance.sqrt()
-
-                overlap_score = self.compute_pose_overlap_score(cam_center.squeeze(0), selected_cameras)
-                acquisition = mu + self.ucb_beta * sigma + self.sim_lambda * overlap_score
-
-                loss = -acquisition
-                loss.backward()
-                uv_optimizer.step()
-
-                u.data.clamp_(u_min, u_max)
-                v.data.clamp_(v_min, v_max)
-
-            # Evaluate final acquisition score
-            with torch.no_grad():
-                cam_center = uv2car_torch(u, v) * radius
+            with gpytorch.settings.fast_pred_var():
                 pred = self.model(cam_center)
                 mu = pred.mean
                 sigma = pred.variance.sqrt()
-                overlap_score = self.compute_pose_overlap_score(cam_center.squeeze(0), selected_cameras)
-                final_acq = mu + self.ucb_beta * sigma + self.sim_lambda * overlap_score
 
-            if final_acq.item() > best_acq:
-                best_acq = final_acq.item()
-                best_uv = (u.item(), v.item())
-                best_center = uv2car_torch(u.detach(), v.detach()).squeeze(0) * radius
+            # Overlap score based on pose proximity
+            overlap_score = self.compute_pose_overlap_score(cam_center.squeeze(0), selected_cameras)
 
-        return best_center, best_uv
+            # Weighted acquisition function
+            acquisition = mu + self.ucb_beta * sigma + self.sim_lambda * overlap_score
+
+            loss = -acquisition
+            loss.backward()
+            uv_optimizer.step()
+
+            u.data.clamp_(u_min, u_max)
+            v.data.clamp_(v_min, v_max)
+
+        final_uv = (u.item(), v.item())
+        final_center = uv2car_torch(u.detach(), v.detach()).squeeze(0) * radius
+        return final_center, final_uv
