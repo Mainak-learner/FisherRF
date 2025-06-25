@@ -139,25 +139,15 @@ class MCDKLNBVSelector(nn.Module):
 
     def optimize_gp_posterior_dkl(
         self,
-        proposal_centers,  # List[(3,)]
-        uncertainties,     # Tensor (N,)
-        init_uv,           # Tuple[float, float]
-        uv_bounds,         # Tuple[(u_min, u_max), (v_min, v_max)]
-        radius,            # float
+        proposal_centers,       # List[(3,)]
+        uncertainties,          # Tensor (N,)
+        init_uv,                # Tuple[float, float] (used if N_init = 1)
+        uv_bounds,              # ((u_min, u_max), (v_min, v_max))
+        radius,                 # float
         steps=100,
-        lr=1e-2
+        lr=1e-2,
+        N_init=5                # <-- number of random restarts
     ):
-        """
-        Args:
-            proposal_centers: List of world 3D camera positions (N, 3)
-            uncertainties: Uncertainty values at proposal poses (N,)
-            init_uv: Initial (u, v)
-            uv_bounds: ((u_min, u_max), (v_min, v_max))
-            radius: Radius to convert UV to 3D
-        Returns:
-            final_center: Optimized 3D camera center
-            final_uv: Optimized (u, v) pair
-        """
         device = self.device
         u_min, u_max = uv_bounds[0]
         v_min, v_max = uv_bounds[1]
@@ -165,42 +155,59 @@ class MCDKLNBVSelector(nn.Module):
         # Prepare GP training data
         X_train = torch.stack([pc.detach() if pc.requires_grad else pc for pc in proposal_centers]).float().to(device)
         y_train = uncertainties.to(device).squeeze()
-
         self.train_gp(X_train, y_train)
 
-        # Init optimization parameters
-        u = torch.tensor([init_uv[0]], requires_grad=True, dtype=torch.float32, device=device)
-        v = torch.tensor([init_uv[1]], requires_grad=True, dtype=torch.float32, device=device)
-        optimizer = torch.optim.Adam([u, v], lr=lr)
+        best_acq = float('-inf')
+        best_uv = None
+        best_center = None
 
-        # Initialize previous UVs
-        prev_u = u.clone().detach()
-        prev_v = v.clone().detach()
+        for trial in range(N_init):
+            # Use random init for all but first trial
+            if trial == 0:
+                u_val, v_val = init_uv
+            else:
+                u_val = np.random.uniform(u_min, u_max)
+                v_val = np.random.uniform(v_min, v_max)
 
-        for step in range(steps):
-            optimizer.zero_grad()
-            cam_center = uv2car_torch(u, v) * radius
+            u = torch.tensor([u_val], requires_grad=True, dtype=torch.float32, device=device)
+            v = torch.tensor([v_val], requires_grad=True, dtype=torch.float32, device=device)
+            optimizer = torch.optim.Adam([u, v], lr=lr)
 
-            mu, sigma = self.predict_with_uncertainty(cam_center)
-            acquisition = mu + self.beta * sigma
-            loss = -acquisition.mean()
-
-            # Smoothness regularization across UV updates
-            if step > 0:
-                delta_u = u - prev_u
-                delta_v = v - prev_v
-                loss += self.grad_reg_lambda * (delta_u**2 + delta_v**2).sum()
-
-            loss.backward()
-            optimizer.step()
-
-            u.data.clamp_(u_min, u_max)
-            v.data.clamp_(v_min, v_max)
-
-            # Update prev for next step
             prev_u = u.clone().detach()
             prev_v = v.clone().detach()
 
-        final_uv = (u.item(), v.item())
-        final_center = uv2car_torch(u.detach(), v.detach()).squeeze(0) * radius
-        return final_center, final_uv
+            for step in range(steps):
+                optimizer.zero_grad()
+                cam_center = uv2car_torch(u, v) * radius
+
+                mu, sigma = self.predict_with_uncertainty(cam_center)
+                acquisition = mu + self.beta * sigma
+                loss = -acquisition.mean()
+
+                # UV smoothness regularization
+                if step > 0:
+                    delta_u = u - prev_u
+                    delta_v = v - prev_v
+                    loss += self.grad_reg_lambda * (delta_u**2 + delta_v**2).sum()
+
+                loss.backward()
+                optimizer.step()
+
+                u.data.clamp_(u_min, u_max)
+                v.data.clamp_(v_min, v_max)
+
+                prev_u = u.clone().detach()
+                prev_v = v.clone().detach()
+
+            # Evaluate final acquisition score
+            with torch.no_grad():
+                cam_center = uv2car_torch(u, v) * radius
+                mu, sigma = self.predict_with_uncertainty(cam_center)
+                final_acq = (mu + self.beta * sigma).item()
+
+            if final_acq > best_acq:
+                best_acq = final_acq
+                best_uv = (u.item(), v.item())
+                best_center = (uv2car_torch(u.detach(), v.detach()).squeeze(0) * radius).detach()
+
+        return best_center, best_uv
