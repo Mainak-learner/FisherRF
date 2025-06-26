@@ -191,16 +191,17 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
         image_feat_dim = 128  # same as Φ output dim   
     else:
         selector = GPFisherNBVSelector(args, device="cuda")
-        I_train_diag = compute_fisher_hessian(
-        gaussians, eval_selected_cams, pipe, background,
-        selector.filter_out_idx, selector.reg_lambda
-        )
     for train_iter in range(1, args.max_nbv_iterations + 1):
         print(f"=== Iteration {train_iter}: selecting NBVs from sectors ===")
 
         sector_selections = []
         sector_init_poses = []
 
+        if args.vdgp or args.deepkgp:
+            I_train_diag = compute_fisher_hessian(
+            gaussians, eval_selected_cams, pipe, background,
+            selector.filter_out_idx, selector.reg_lambda
+            )
         for sector_id, sector_indices in sector_map.items():
             if len(sector_indices) == 0:
                 continue
@@ -313,10 +314,6 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
 
         sector_selected_cams = sector_selections  # Only train on new NBVs
         eval_selected_cams += sector_selected_cams
-        I_train_diag = compute_fisher_hessian(
-        gaussians, eval_selected_cams, pipe, background,
-        selector.filter_out_idx, selector.reg_lambda
-        )
         selected_cams = sector_selected_cams
 
         print(f"=== Training on {len(selected_cams)} views (sector round {train_iter}) ===")
