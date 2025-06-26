@@ -200,7 +200,59 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
                 candidate_cams.append(dummy)
                 candidate_images.append(render_pkg["render"])
 
-            if args.deepkgp:
+            if args.nbv_process=="selection":
+                # Compute Fisher-trace based uncertainty at proposal poses
+                uncertainties = selector.compute_fisher_uncertainty(gaussians, selected_cams, candidate_cams, pipe, background)
+                final_cam = candidate_cams[torch.argmax(uncertainties)]
+                oracle_img = render_with_oracle(final_cam.camera_center, object_center, pipe, oracle_gaussians, background, reference_camera)
+                final_cam.original_image = oracle_img.detach().clamp(0.0, 1.0).cuda()            
+            elif args.vdgp:
+                pose_tensor = torch.stack([cam.camera_center for cam in candidate_cams], dim=0).float().to("cuda")  # (N, 3)
+                image_tensor = torch.stack(candidate_images, dim=0).float().to("cuda")  # (N, 3, H, W)
+
+                # Step 2: Train Φ for this sector
+                phi = train_phi_sector(pose_tensor, image_tensor)
+                phi.eval()
+                selector = VDGPFisherNBVSelector(
+                    args,
+                    input_dim=pose_feat_dim + image_feat_dim,  # total input dim to GP1
+                    phi_pose_to_feat=phi,
+                    device="cuda"
+                ) 
+                # Compute Fisher-trace based uncertainty at proposal poses
+                uncertainties = selector.compute_fisher_uncertainty(gaussians, selected_cams, candidate_cams, pipe, background)
+
+                # Select the most uncertain proposal
+                max_unc_idx = torch.argmax(uncertainties).item()
+                most_uncertain_uv = proposal_uvs[max_unc_idx]
+                # Apply small random perturbation
+                u_perturbed = most_uncertain_uv[0] + np.random.uniform(-0.02, 0.02)
+                v_perturbed = most_uncertain_uv[1] + np.random.uniform(-0.02, 0.02)
+
+                # Clamp to sector bounds
+                u_min, u_max = u_bounds
+                v_min, v_max = v_bounds
+
+                u_perturbed = np.clip(u_perturbed, u_min, u_max)
+                v_perturbed = np.clip(v_perturbed, v_min, v_max)
+
+                init_pose = (u_perturbed, v_perturbed)
+                sector_init_poses.append(proposal_centers[max_unc_idx].detach().cpu().numpy())
+                center_opt, uv_opt = selector.optimize_gp_posterior_vdgp(
+                    proposal_uvs=[all_uvs[i] for i in sector_indices],
+                    proposal_centers=[all_centers[i].cpu().numpy() for i in sector_indices],
+                    uncertainties=uncertainties,  # <-- must be a torch.Tensor
+                    init_uv=init_pose,
+                    uv_bounds=(u_bounds, v_bounds),
+                    radius=sample_radius,
+                    object_center=object_center,  # <-- make sure this is passed
+                    steps=args.pose_optim_steps,
+                    lr=args.pose_lr
+                )
+                # Create DummyCamera for selected pose
+                oracle_img = render_with_oracle(center_opt, object_center, pipe, oracle_gaussians, background, reference_camera)
+                final_cam = DummyCamera(*look_at(center_opt.detach(), object_center.detach()), reference_camera, image=oracle_img.detach())
+            elif args.deepkgp:
                 uncertainties = selector.compute_fisher_uncertainty(gaussians, eval_selected_cams, candidate_cams, pipe, background)
                 max_unc_idx = torch.argmax(uncertainties).item()
                 most_uncertain_uv = proposal_uvs[max_unc_idx]
@@ -233,9 +285,6 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
                 )
                 oracle_img = render_with_oracle(center_opt, object_center, pipe, oracle_gaussians, background, reference_camera)
                 final_cam = DummyCamera(*look_at(center_opt.detach(), object_center.detach()), reference_camera, image=oracle_img.detach())
-            else:
-                continue  # Extend for other NBV types if needed
-
             sector_selections.append(final_cam)
             img_path = f"oracle_gt_visualization/pose_{len(eval_selected_cams) + len(sector_selections)}.png"
             TF.to_pil_image(oracle_img.clamp(0, 1).cpu()).save(img_path)
