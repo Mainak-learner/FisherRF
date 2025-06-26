@@ -371,7 +371,7 @@ def training_report(tb_writer, iteration, Ll1, loss, l1_loss_fn, elapsed, test_i
         parser.add_argument("--nbv_process", type=str, default="optimization", help="Process of reaching NBV", choices=["optimization", "selection"])
         parser.add_argument("--deepkgp", action="store_true", help="Use Deep Kernel GP for uncertainty approximation")
         parser.add_argument("--vdgp", action="store_true", help="Use Variational Deep GP for uncertainty approximation")
-        parser.add_argument("--max_nbv_iterations", type=int, default=5_000, help="Iterations of Revolution around the object")
+        parser.add_argument("--max_nbv_iterations", type=int, default=5, help="Iterations of Revolution around the object")
         args = parser.parse_args()
 
         wandb.init(project="active", config=vars(args))
