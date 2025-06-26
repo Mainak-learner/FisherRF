@@ -25,6 +25,7 @@ import json
 from PIL import Image
 from active.mc_dkl_selector import MCDKLNBVSelector
 from active.gp_predictor import GPFisherNBVSelector, VDGPFisherNBVSelector
+from gaussian_renderer import render, network_gui, modified_render
 import torchvision.transforms.functional as TF
 from arguments import ModelParams, PipelineParams, OptimizationParams
 from active.train_phi_pose_to_feat import train_phi_sector
