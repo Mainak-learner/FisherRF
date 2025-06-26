@@ -49,6 +49,23 @@ def prepare_output_and_logger(args):
         f.write(str(Namespace(**vars(args))))
     return None
 
+def compute_fisher_hessian(gaussians, cameras, pipe, background, filter_out_idx, reg_lambda):
+    params = gaussians.capture()[1:7]
+    params = [p for i, p in enumerate(params) if i not in filter_out_idx]
+    H_train = torch.zeros(sum(p.numel() for p in params), device=params[0].device)
+
+    for cam in tqdm(cameras, desc="Caching diagonal Hessian on training views"):
+        render_pkg = modified_render(cam, gaussians, pipe, background)
+        pred_img = render_pkg["render"]
+        pred_img.backward(gradient=torch.ones_like(pred_img))
+
+        cur_H = torch.cat([p.grad.detach().reshape(-1) for p in params])
+        H_train += cur_H
+
+        gaussians.optimizer.zero_grad(set_to_none=True)
+
+    return torch.reciprocal(H_train + reg_lambda)
+
 def training(dataset, opt, pipe, test_iterations, save_iterations, args):
     prepare_output_and_logger(dataset)
     gaussians = GaussianModel(dataset.sh_degree)
@@ -173,6 +190,10 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
         image_feat_dim = 128  # same as Φ output dim   
     else:
         selector = GPFisherNBVSelector(args, device="cuda")
+        I_train_diag = compute_fisher_hessian(
+        gaussians, eval_selected_cams, pipe, background,
+        selector.filter_out_idx, selector.reg_lambda
+        )
     for train_iter in range(1, args.max_nbv_iterations + 1):
         print(f"=== Iteration {train_iter}: selecting NBVs from sectors ===")
 
@@ -202,7 +223,7 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
 
             if args.nbv_process=="selection":
                 # Compute Fisher-trace based uncertainty at proposal poses
-                uncertainties = selector.compute_fisher_uncertainty(gaussians, selected_cams, candidate_cams, pipe, background)
+                uncertainties = selector.compute_fisher_uncertainty(gaussians, candidate_cams, I_train_diag, pipe, background)
                 final_cam = candidate_cams[torch.argmax(uncertainties)]
                 oracle_img = render_with_oracle(final_cam.camera_center, object_center, pipe, oracle_gaussians, background, reference_camera)
                 final_cam.original_image = oracle_img.detach().clamp(0.0, 1.0).cuda()            
@@ -253,7 +274,7 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
                 oracle_img = render_with_oracle(center_opt, object_center, pipe, oracle_gaussians, background, reference_camera)
                 final_cam = DummyCamera(*look_at(center_opt.detach(), object_center.detach()), reference_camera, image=oracle_img.detach())
             elif args.deepkgp:
-                uncertainties = selector.compute_fisher_uncertainty(gaussians, eval_selected_cams, candidate_cams, pipe, background)
+                uncertainties = selector.compute_fisher_uncertainty(gaussians, candidate_cams, I_train_diag, pipe, background)
                 max_unc_idx = torch.argmax(uncertainties).item()
                 most_uncertain_uv = proposal_uvs[max_unc_idx]
                 u_perturbed = most_uncertain_uv[0] + np.random.uniform(-0.02, 0.02)
@@ -291,6 +312,10 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
 
         sector_selected_cams = sector_selections  # Only train on new NBVs
         eval_selected_cams += sector_selected_cams
+        I_train_diag = compute_fisher_hessian(
+        gaussians, eval_selected_cams, pipe, background,
+        selector.filter_out_idx, selector.reg_lambda
+        )
         selected_cams = sector_selected_cams
 
         print(f"=== Training on {len(selected_cams)} views (sector round {train_iter}) ===")
