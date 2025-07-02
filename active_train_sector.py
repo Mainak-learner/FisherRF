@@ -186,6 +186,7 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
     print(f"[Middle Circle] PSNR: {psnr_total/N:.2f}, SSIM: {ssim_total/N:.4f}, LPIPS: {lpips_total/N:.4f}")
 
     eval_selected_cams = selected_cams.copy()  # for evaluation + GP selector
+    used_uvs_global = set()
     if args.vdgp:
         pose_feat_dim = 3  # or 6 if using orientation
         image_feat_dim = 128  # same as Φ output dim   
@@ -224,11 +225,32 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
                 candidate_images.append(render_pkg["render"])
 
             if args.nbv_process=="selection":
-                # Compute Fisher-trace based uncertainty at proposal poses
                 uncertainties = selector.compute_fisher_uncertainty(gaussians, candidate_cams, I_train_diag, pipe, background)
-                final_cam = candidate_cams[torch.argmax(uncertainties)]
+
+                # Filter candidate poses that have been used before (by UV)
+                available_idxs = []
+                for idx, uv in enumerate(proposal_uvs):
+                    uv_tuple = (round(uv[0], 5), round(uv[1], 5))  # round to reduce float precision issues
+                    if uv_tuple not in used_uvs_global:
+                        available_idxs.append(idx)
+
+                if not available_idxs:
+                    print(f"[Warning] All candidate poses in sector {sector_id} already used. Skipping.")
+                    continue
+
+                # Select among unused
+                available_uncertainties = uncertainties[available_idxs]
+                max_local_idx = torch.argmax(available_uncertainties).item()
+                max_global_idx = available_idxs[max_local_idx]
+
+                # Register UV as used
+                uv_tuple = (round(proposal_uvs[max_global_idx][0], 5), round(proposal_uvs[max_global_idx][1], 5))
+                used_uvs_global.add(uv_tuple)
+
+                # Final selection
+                final_cam = candidate_cams[max_global_idx]
                 oracle_img = render_with_oracle(final_cam.camera_center, object_center, pipe, oracle_gaussians, background, reference_camera)
-                final_cam.original_image = oracle_img.detach().clamp(0.0, 1.0).cuda()            
+                final_cam.original_image = oracle_img.detach().clamp(0.0, 1.0).cuda()         
             elif args.vdgp:
                 pose_tensor = torch.stack([cam.camera_center for cam in candidate_cams], dim=0).float().to("cuda")  # (N, 3)
                 image_tensor = torch.stack(candidate_images, dim=0).float().to("cuda")  # (N, 3, H, W)
