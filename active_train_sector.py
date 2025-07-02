@@ -337,11 +337,12 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
                     steps=args.pose_optim_steps,
                     lr=args.pose_lr
                 )
+                oracle_img = render_with_oracle(center_opt, object_center, pipe, oracle_gaussians, background, reference_camera)
+                final_cam = DummyCamera(*look_at(center_opt.detach(), object_center.detach()), reference_camera, image=oracle_img.detach())
+                
                 np.save(os.path.join(sector_dir, "deepkgp_pose.npy"), center_opt.cpu().numpy())
                 TF.to_pil_image(final_cam.original_image.cpu()).save(os.path.join(sector_dir, "deepkgp_image.png"))
 
-                np.save("oracle_gt_visualization/deepkgp_pose.npy", center_opt.cpu().numpy())
-                TF.to_pil_image(final_cam.original_image.cpu()).save("oracle_gt_visualization/deepkgp_image.png")
             sector_selections.append(final_cam)
             img_path = f"oracle_gt_visualization/pose_{len(eval_selected_cams) + len(sector_selections)}.png"
             TF.to_pil_image(oracle_img.clamp(0, 1).cpu()).save(img_path)
