@@ -308,6 +308,12 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
                 init_pose = (u_perturbed, v_perturbed)
                 sector_init_poses.append(proposal_centers[max_unc_idx].detach().cpu().numpy())
 
+                fisherrf_cam = candidate_cams[max_unc_idx]
+                fisherrf_cam_oracle_img = render_with_oracle(fisherrf_cam.camera_center, object_center, pipe, oracle_gaussians, background, reference_camera)
+                fisherrf_cam.original_image = fisherrf_cam_oracle_img.detach().clamp(0.0, 1.0).cuda()   
+
+                np.save("oracle_gt_visualization/fisherrf_pose.npy", fisherrf_cam.camera_center.cpu().numpy())
+                TF.to_pil_image(fisherrf_cam.original_image.cpu()).save("oracle_gt_visualization/fisherrf_image.png")
                 image_encoder = ImageEncoder(output_dim=128).to("cuda")
 
                 center_opt, uv_opt = selector.optimize_gp_posterior_dkl(
@@ -330,6 +336,9 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
                 )
                 oracle_img = render_with_oracle(center_opt, object_center, pipe, oracle_gaussians, background, reference_camera)
                 final_cam = DummyCamera(*look_at(center_opt.detach(), object_center.detach()), reference_camera, image=oracle_img.detach())
+
+                np.save("oracle_gt_visualization/deepkgp_pose.npy", center_opt.camera_center.cpu().numpy())
+                TF.to_pil_image(final_cam.original_image.cpu()).save("oracle_gt_visualization/deepkgp_image.png")
             sector_selections.append(final_cam)
             img_path = f"oracle_gt_visualization/pose_{len(eval_selected_cams) + len(sector_selections)}.png"
             TF.to_pil_image(oracle_img.clamp(0, 1).cpu()).save(img_path)
