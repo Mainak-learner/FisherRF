@@ -204,6 +204,9 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
             selector.filter_out_idx, selector.reg_lambda
             )
         for sector_id, sector_indices in sector_map.items():
+            sector_dir = f"oracle_gt_visualization_sectorwise/sector_{sector_id}"
+            os.makedirs(sector_dir, exist_ok=True)
+
             if len(sector_indices) == 0:
                 continue
 
@@ -312,8 +315,8 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
                 fisherrf_cam_oracle_img = render_with_oracle(fisherrf_cam.camera_center, object_center, pipe, oracle_gaussians, background, reference_camera)
                 fisherrf_cam.original_image = fisherrf_cam_oracle_img.detach().clamp(0.0, 1.0).cuda()   
 
-                np.save("oracle_gt_visualization/fisherrf_pose.npy", fisherrf_cam.camera_center.cpu().numpy())
-                TF.to_pil_image(fisherrf_cam.original_image.cpu()).save("oracle_gt_visualization/fisherrf_image.png")
+                np.save(os.path.join(sector_dir, "fisherrf_pose.npy"), fisherrf_cam.camera_center.cpu().numpy())
+                TF.to_pil_image(fisherrf_cam.original_image.cpu()).save(os.path.join(sector_dir, "fisherrf_image.png"))
                 image_encoder = ImageEncoder(output_dim=128).to("cuda")
 
                 center_opt, uv_opt = selector.optimize_gp_posterior_dkl(
@@ -334,8 +337,8 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
                     steps=args.pose_optim_steps,
                     lr=args.pose_lr
                 )
-                oracle_img = render_with_oracle(center_opt, object_center, pipe, oracle_gaussians, background, reference_camera)
-                final_cam = DummyCamera(*look_at(center_opt.detach(), object_center.detach()), reference_camera, image=oracle_img.detach())
+                np.save(os.path.join(sector_dir, "deepkgp_pose.npy"), center_opt.cpu().numpy())
+                TF.to_pil_image(final_cam.original_image.cpu()).save(os.path.join(sector_dir, "deepkgp_image.png"))
 
                 np.save("oracle_gt_visualization/deepkgp_pose.npy", center_opt.cpu().numpy())
                 TF.to_pil_image(final_cam.original_image.cpu()).save("oracle_gt_visualization/deepkgp_image.png")
