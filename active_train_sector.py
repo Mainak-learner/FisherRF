@@ -304,12 +304,14 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
                 uncertainties = selector.compute_fisher_uncertainty(gaussians, candidate_cams, I_train_diag, pipe, background)
                 max_unc_idx = torch.argmax(uncertainties).item()
                 most_uncertain_uv = proposal_uvs[max_unc_idx]
-                u_perturbed = most_uncertain_uv[0] + np.random.uniform(-0.02, 0.02)
-                v_perturbed = most_uncertain_uv[1] + np.random.uniform(-0.02, 0.02)
-                u_perturbed = np.clip(u_perturbed, *u_bounds)
-                v_perturbed = np.clip(v_perturbed, *v_bounds)
-                init_pose = (u_perturbed, v_perturbed)
-                sector_init_poses.append(proposal_centers[max_unc_idx].detach().cpu().numpy())
+                u_center = (u_bounds[0] + u_bounds[1]) / 2
+                v_center = (v_bounds[0] + v_bounds[1]) / 2
+                init_pose = (u_center, v_center)
+
+                # Find proposal pose closest to midpoint to record as init
+                uv_dists = [np.linalg.norm(np.array(uv) - np.array(init_pose)) for uv in proposal_uvs]
+                closest_idx = np.argmin(uv_dists)
+                sector_init_poses.append(proposal_centers[closest_idx].detach().cpu().numpy())
 
                 fisherrf_cam = candidate_cams[max_unc_idx]
                 fisherrf_rendered = render(fisherrf_cam, gaussians, pipe, background)["render"].clamp(0, 1)
