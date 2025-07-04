@@ -171,20 +171,20 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
                 gaussians.optimizer.step()
                 gaussians.optimizer.zero_grad(set_to_none = True)
     
-    lpips = lpips_func("cuda", net_type='vgg')
+    lpips_metric = lpips_func("cuda", net_type='vgg')
     psnr_total, ssim_total, lpips_total = 0.0, 0.0, 0.0
-    os.makedirs("middle_render_vs_gt", exist_ok=True)
-    for idx, cam in enumerate(selected_cams):
-        rendered = render(cam, gaussians, pipe, background)["render"].clamp(0, 1)
-        gt_image = cam.original_image.clamp(0, 1).to(rendered.device)  # ensure both are on the same device
+    test_cams = scene.getAllCameras(1.0)
 
+    for cam in test_cams:
+        rendered = render(cam, gaussians, pipe, background)["render"].clamp(0, 1)
+        gt_image = cam.original_image.clamp(0, 1).to(rendered.device)
         psnr_total += psnr(rendered, gt_image).mean().item()
         ssim_total += ssim(rendered, gt_image).mean().item()
-        lpips_total += lpips(rendered, gt_image).mean().item()
-    
-    N = len(selected_cams)
-    print(f"[Middle Circle] PSNR: {psnr_total/N:.2f}, SSIM: {ssim_total/N:.4f}, LPIPS: {lpips_total/N:.4f}")
+        lpips_total += lpips_metric(rendered, gt_image).mean().item()
 
+    num_eval = len(test_cams)
+    print(f"[Iter 0] PSNR: {psnr_total/num_eval:.2f}, SSIM: {ssim_total/num_eval:.4f}, LPIPS: {lpips_total/num_eval:.4f}")
+    
     eval_selected_cams = selected_cams.copy()  # for evaluation + GP selector
     used_uvs_global = set()
     if args.vdgp:
