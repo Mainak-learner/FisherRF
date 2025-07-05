@@ -500,8 +500,8 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # Define sweep values
-    pose_lrs = [1e-4, 5e-4, 1e-3]
-    pose_steps = [100, 200, 300]
+    pose_lrs = [5e-4]
+    pose_steps = [200]
 
     for lr in pose_lrs:
         for steps in pose_steps:
