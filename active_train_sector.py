@@ -415,6 +415,22 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
         num_eval = len(test_cams)
         print(f"[Iter {train_iter}] PSNR: {psnr_total/num_eval:.2f}, SSIM: {ssim_total/num_eval:.4f}, LPIPS: {lpips_total/num_eval:.4f}")
 
+        # Initialize the metrics_curve list only once
+        if not hasattr(args, "metrics_curve"):
+            args.metrics_curve = []
+
+        args.metrics_curve.append({
+            "iteration": train_iter,
+            "pose_lr": args.pose_lr,
+            "pose_optim_steps": args.pose_optim_steps,
+            "psnr": psnr_total / num_eval,
+            "ssim": ssim_total / num_eval,
+            "lpips": lpips_total / num_eval
+        })
+    output_dir = os.path.join("logs", "pose_opt_sweep", f"lr_{args.pose_lr}_steps_{args.pose_optim_steps}")
+    os.makedirs(output_dir, exist_ok=True)
+    with open(os.path.join(output_dir, "curve.json"), "w") as f:
+        json.dump(args.metrics_curve, f, indent=2)
 
 def training_report(tb_writer, iteration, Ll1, loss, l1_loss_fn, elapsed, test_iterations, scene, render_fn, render_args):
     wandb.log({
@@ -483,7 +499,28 @@ if __name__ == "__main__":
     parser.add_argument("--max_nbv_iterations", type=int, default=5, help="Iterations of Revolution around the object")
     args = parser.parse_args()
 
-    wandb.init(project="active", config=vars(args))
-    safe_state(False)
-    training(lp.extract(args), op.extract(args), pp.extract(args), args.test_iterations, args.save_iterations, args)
-    wandb.finish()
+    # Define sweep values
+    pose_lrs = [1e-4, 5e-4, 1e-3]
+    pose_steps = [100, 200, 300]
+
+    for lr in pose_lrs:
+        for steps in pose_steps:
+            print(f"\n=== Running training with LR={lr}, STEPS={steps} ===\n")
+
+            # Update args dynamically
+            args.pose_lr = lr
+            args.pose_optim_steps = steps
+            args.metrics_curve = []  # clear metrics from previous run
+
+            wandb.init(project="active", config=vars(args), reinit=True)
+            safe_state(False)
+
+            training(lp.extract(args), op.extract(args), pp.extract(args), args.test_iterations, args.save_iterations, args)
+
+            # Save metrics
+            output_dir = os.path.join("logs", "pose_opt_sweep", f"lr_{lr}_steps_{steps}")
+            os.makedirs(output_dir, exist_ok=True)
+            with open(os.path.join(output_dir, "curve.json"), "w") as f:
+                json.dump(args.metrics_curve, f, indent=2)
+
+            wandb.finish()
