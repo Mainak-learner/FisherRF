@@ -33,13 +33,17 @@ import torch.backends.cudnn as cudnn
 import random
 import torch.nn.functional as F
 
-def set_global_seed(seed):
+def set_global_seed(seed: int = 42):
+    os.environ["PYTHONHASHSEED"] = str(seed)
+    os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"  # important for deterministic matmul
     np.random.seed(seed)
     random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
+
     cudnn.deterministic = True
     cudnn.benchmark = False
+    torch.use_deterministic_algorithms(True)  # Throws if you use nondeterministic ops
 
 
 def render_fn(cam_center, object_center, pipe, gaussians, background, reference_camera, debug=False):
