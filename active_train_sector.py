@@ -32,6 +32,8 @@ from active.train_phi_pose_to_feat import train_phi_sector
 import torch.backends.cudnn as cudnn
 import random
 import torch.nn.functional as F
+os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
+
 
 def set_global_seed(seed: int = 42):
     os.environ["PYTHONHASHSEED"] = str(seed)
