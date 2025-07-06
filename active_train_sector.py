@@ -29,7 +29,17 @@ from gaussian_renderer import render, network_gui, modified_render
 import torchvision.transforms.functional as TF
 from arguments import ModelParams, PipelineParams, OptimizationParams
 from active.train_phi_pose_to_feat import train_phi_sector
+import torch.backends.cudnn as cudnn
+import random
 import torch.nn.functional as F
+
+def set_global_seed(seed):
+    np.random.seed(seed)
+    random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    cudnn.deterministic = True
+    cudnn.benchmark = False
 
 
 def render_fn(cam_center, object_center, pipe, gaussians, background, reference_camera, debug=False):
@@ -92,6 +102,7 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
     #     gt_img = render_with_oracle(cam_center, object_center, pipe, oracle_gaussians, torch.tensor([1.0, 1.0, 1.0], device="cuda"), reference_camera)
     #     img_path = f"oracle_gt_visualization/proposal_pose_{idx}.png"
     #     TF.to_pil_image(gt_img.cpu()).save(img_path)
+    set_global_seed(args.seed)
 
     middle_ids = np.random.choice(middle_circle_indices, size=6, replace=False)
     selected_cams = []
@@ -481,7 +492,7 @@ if __name__ == "__main__":
     parser.add_argument("--checkpoint_iterations", nargs="+", type=int, default=[])
     parser.add_argument("--start_checkpoint", type=str, default = None)
     # Flags for view selections
-    parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--seed", type=int, default=0, help="Random seed for reproducibility")
     parser.add_argument("--reg_lambda", type=float, default=1e-6)
     parser.add_argument("--I_test", action="store_true", help="Use I test to get the selection base")
     parser.add_argument("--I_acq_reg", action="store_true", help="apply reg_lambda to acq H too")
