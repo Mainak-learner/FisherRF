@@ -336,7 +336,21 @@ class GPFisherNBVSelector(Module):
             acq_scores[idx] = torch.sum(cur_H * I_train_diag).item()
 
         return acq_scores
+    
+    def reparameterized_acquisition(mu, sigma, num_samples=10, beta=1.0):
+        """
+        Reparameterized sampling of acquisition values.
+        """
+        eps = torch.randn((num_samples,) + mu.shape, device=mu.device)  # (S, B)
+        samples = mu.unsqueeze(0) + sigma.unsqueeze(0) * eps            # (S, B)
 
+        # Option 1: UCB-like sampling (stochastic upper confidence bound)
+        # sampled_acq = samples + beta * sigma.unsqueeze(0)               # shape (S, B)
+
+        # Option 2: just use sampled value directly
+        sampled_acq = samples
+
+        return sampled_acq.mean(dim=0)
     def optimize_gp_posterior(self, proposal_uvs, proposal_centers, uncertainties, init_uv, uv_bounds, radius, steps=200, lr=1e-2):
         """
         Args:
@@ -466,10 +480,10 @@ class GPFisherNBVSelector(Module):
             overlap_score = self.compute_pose_overlap_score(cam_center.squeeze(0), selected_cameras)
 
             # Weighted acquisition function
-            acquisition = mu + self.ucb_beta * sigma
-
-            loss = -acquisition
+            acq = self.reparameterized_acquisition(mu, sigma, num_samples=16, beta=1.0)
+            loss = -acq.sum()  # maximize acquisition => minimize negative
             loss.backward()
+
             uv_optimizer.step()
 
             u.data.clamp_(u_min, u_max)
