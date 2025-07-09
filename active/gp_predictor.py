@@ -337,7 +337,7 @@ class GPFisherNBVSelector(Module):
 
         return acq_scores
     
-    def reparameterized_acquisition(mu, sigma, num_samples=10, beta=1.0):
+    def reparameterized_acquisition(self, mu, sigma, num_samples=10, beta=1.0):
         """
         Reparameterized sampling of acquisition values.
         """
