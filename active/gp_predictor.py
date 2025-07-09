@@ -480,7 +480,7 @@ class GPFisherNBVSelector(Module):
             overlap_score = self.compute_pose_overlap_score(cam_center.squeeze(0), selected_cameras)
 
             # Weighted acquisition function
-            acq = self.reparameterized_acquisition(mu, sigma, num_samples=16, beta=1.0)
+            acq = self.reparameterized_acquisition(mu, sigma, num_samples=1, beta=1.0)
             loss = -acq.sum()  # maximize acquisition => minimize negative
             loss.backward()
 
