@@ -368,7 +368,7 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
 
         sector_selected_cams = sector_selections  # Only train on new NBVs
         eval_selected_cams += sector_selected_cams
-        selected_cams = sector_selected_cams
+        selected_cams = eval_selected_cams
 
         print(f"=== Training on {len(selected_cams)} views (sector round {train_iter}) ===")
 
