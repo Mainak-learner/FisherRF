@@ -32,8 +32,25 @@ from active.train_phi_pose_to_feat import train_phi_sector
 import torch.backends.cudnn as cudnn
 import random
 import torch.nn.functional as F
+import pandas as pd
 os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
 
+def init_metric_logger(output_dir, filename="metrics_log.csv"):
+    log_path = os.path.join(output_dir, filename)
+    if not os.path.exists(log_path):
+        df = pd.DataFrame(columns=["Iteration", "PSNR", "SSIM", "LPIPS"])
+        df.to_csv(log_path, index=False)
+    return log_path
+
+def log_metrics(log_path, iteration, psnr_value, ssim_value, lpips_value):
+    df = pd.read_csv(log_path)
+    df = pd.concat([df, pd.DataFrame([{
+        "Iteration": iteration,
+        "PSNR": round(psnr_value, 2),
+        "SSIM": round(ssim_value, 4),
+        "LPIPS": round(lpips_value, 4)
+    }])], ignore_index=True)
+    df.to_csv(log_path, index=False)
 
 def set_global_seed(seed: int = 42):
     os.environ["PYTHONHASHSEED"] = str(seed)
@@ -85,6 +102,7 @@ def compute_fisher_hessian(gaussians, cameras, pipe, background, filter_out_idx,
 
 def training(dataset, opt, pipe, test_iterations, save_iterations, args):
     prepare_output_and_logger(dataset)
+    log_path = init_metric_logger(args.model_path)
     gaussians = GaussianModel(dataset.sh_degree)
     scene = Scene(dataset, gaussians)
     gaussians.training_setup(opt)
@@ -200,7 +218,12 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
         lpips_total += lpips_metric(rendered, gt_image).mean().item()
 
     num_eval = len(test_cams)
-    print(f"[Iter 0] PSNR: {psnr_total/num_eval:.2f}, SSIM: {ssim_total/num_eval:.4f}, LPIPS: {lpips_total/num_eval:.4f}")
+    avg_psnr = psnr_total / num_eval
+    avg_ssim = ssim_total / num_eval
+    avg_lpips = lpips_total / num_eval
+
+    print(f"[Iter 0] PSNR: {avg_psnr:.2f}, SSIM: {avg_ssim:.4f}, LPIPS: {avg_lpips:.4f}")
+    log_metrics(log_path, 0, avg_psnr, avg_ssim, avg_lpips)
     
     eval_selected_cams = selected_cams.copy()  # for evaluation + GP selector
     used_uvs_global = set()
@@ -430,7 +453,12 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
             lpips_total += lpips_metric(rendered, gt_image).mean().item()
 
         num_eval = len(test_cams)
-        print(f"[Iter {train_iter}] PSNR: {psnr_total/num_eval:.2f}, SSIM: {ssim_total/num_eval:.4f}, LPIPS: {lpips_total/num_eval:.4f}")
+        avg_psnr = psnr_total / num_eval
+        avg_ssim = ssim_total / num_eval
+        avg_lpips = lpips_total / num_eval
+
+        print(f"[Iter {train_iter}] PSNR: {avg_psnr:.2f}, SSIM: {avg_ssim:.4f}, LPIPS: {avg_lpips:.4f}")
+        log_metrics(log_path, train_iter, avg_psnr, avg_ssim, avg_lpips)
 
         # Initialize the metrics_curve list only once
         if not hasattr(args, "metrics_curve"):
