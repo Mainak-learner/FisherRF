@@ -35,6 +35,23 @@ import torch.nn.functional as F
 import pandas as pd
 os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
 
+def get_robust_init_pose(proposal_uvs, uncertainties, u_bounds, v_bounds, strategy="topk-centroid", k=5, eval_selected_cams=None):
+    if strategy == "weighted":
+        w = uncertainties / (uncertainties.sum() + 1e-8)
+        return tuple(np.sum(w[:, None] * np.array(proposal_uvs), axis=0))
+    elif strategy == "topk-centroid":
+        topk_idx = torch.topk(uncertainties, k=k).indices
+        topk_uvs = np.array([proposal_uvs[i] for i in topk_idx])
+        return tuple(np.mean(topk_uvs, axis=0))
+    elif strategy == "diverse-fisher":
+        scores = []
+        for i, uv in enumerate(proposal_uvs):
+            dist = min(np.linalg.norm(np.array(uv) - np.array(cam.uv)) for cam in eval_selected_cams)
+            scores.append(uncertainties[i].item() * dist)
+        return proposal_uvs[np.argmax(scores)]
+    else:  # default to midpoint
+        return ((u_bounds[0] + u_bounds[1]) / 2, (v_bounds[0] + v_bounds[1]) / 2)
+
 def init_metric_logger(output_dir, filename="metrics_log.csv"):
     log_path = os.path.join(output_dir, filename)
     if not os.path.exists(log_path):
@@ -342,11 +359,7 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
                 final_cam = DummyCamera(*look_at(center_opt.detach(), object_center.detach()), reference_camera, image=oracle_img.detach())
             elif args.deepkgp:
                 uncertainties = selector.compute_fisher_uncertainty(gaussians, candidate_cams, I_train_diag, pipe, background)
-                max_unc_idx = torch.argmax(uncertainties).item()
-                most_uncertain_uv = proposal_uvs[max_unc_idx]
-                u_center = (u_bounds[0] + u_bounds[1]) / 2
-                v_center = (v_bounds[0] + v_bounds[1]) / 2
-                init_pose = (u_center, v_center)
+                init_pose = get_robust_init_pose(proposal_uvs, uncertainties, u_bounds, v_bounds, strategy="weighted", eval_selected_cams=eval_selected_cams)
 
                 # Find proposal pose closest to midpoint to record as init
                 uv_dists = [np.linalg.norm(np.array(uv) - np.array(init_pose)) for uv in proposal_uvs]
