@@ -147,6 +147,7 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
     #     img_path = f"oracle_gt_visualization/proposal_pose_{idx}.png"
     #     TF.to_pil_image(gt_img.cpu()).save(img_path)
     set_global_seed(args.seed)
+    background = torch.tensor([1.0, 1.0, 1.0], dtype=torch.float32, device="cuda")
     centers, directions = sample_uniform_sphere_views(num_views=100, radius=sample_radius, object_center=object_center)
 
     uniform_test_cameras = []
@@ -198,7 +199,6 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
         print(f"cam_center:{cam_center}, dummy_cam_center:{dummy_camera.camera_center}") 
         selected_cams.append(dummy_camera)
 
-    background = torch.tensor([1.0, 1.0, 1.0], dtype=torch.float32, device="cuda")
 
     viewpoint_stack=None 
     for iteration in tqdm(range(1, args.initial_train + 1), desc="Initial Training on Middle Circle"):
