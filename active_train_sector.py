@@ -148,7 +148,7 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
     #     TF.to_pil_image(gt_img.cpu()).save(img_path)
     set_global_seed(args.seed)
     background = torch.tensor([1.0, 1.0, 1.0], dtype=torch.float32, device="cuda")
-    centers, directions = sample_uniform_sphere_views(num_views=100, radius=sample_radius, object_center=object_center)
+    centers, directions = sample_uniform_sphere_views(num_views=400, radius=sample_radius, object_center=object_center)
 
     uniform_test_cameras = []
     for center, direction in zip(centers, directions):
