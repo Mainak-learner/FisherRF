@@ -129,7 +129,6 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
 
     oracle_gaussians = GaussianModel(dataset.sh_degree)
     oracle_gaussians.load_ply(os.path.join(args.oracle_model_path, "point_cloud/iteration_30000/point_cloud.ply"))
-    oracle_gaussians.eval()
 
     object_center = oracle_gaussians.get_xyz.mean(dim=0).detach()
     reference_camera = scene.getAllCameras()[0]
@@ -159,7 +158,8 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
 
     oracle_renders = []
     for cam_center in tqdm(uniform_centers):
-        rendered = render_with_oracle(cam_center, object_center, pipe, oracle_gaussians, torch.tensor([1.0, 1.0, 1.0], device="cuda"), reference_camera)
+        with torch.no_grad():
+            rendered = render_with_oracle(cam_center, object_center, pipe, oracle_gaussians, torch.tensor([1.0, 1.0, 1.0], device="cuda"), reference_camera)
         oracle_renders.append(rendered.clamp(0, 1))
     middle_ids = np.random.choice(middle_circle_indices, size=6, replace=False)
     selected_cams = []
