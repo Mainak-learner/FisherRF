@@ -148,17 +148,17 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
     #     TF.to_pil_image(gt_img.cpu()).save(img_path)
     set_global_seed(args.seed)
     background = torch.tensor([1.0, 1.0, 1.0], dtype=torch.float32, device="cuda")
-    centers, directions = sample_uniform_sphere_views(num_views=400, radius=sample_radius, object_center=object_center)
+    uniform_centers, directions = sample_uniform_sphere_views(num_views=400, radius=sample_radius, object_center=object_center)
 
     uniform_test_cameras = []
-    for center, direction in zip(centers, directions):
+    for center, direction in zip(uniform_centers, directions):
         cam_params = look_at(center, object_center, reference_camera)
         cam = DummyCamera(*cam_params, reference_camera)
         uniform_test_cameras.append(cam)
 
     oracle_renders = []
-    for cam in tqdm(uniform_test_cameras):
-        rendered = render(cam, oracle_gaussians, pipe, background)["render"]
+    for cam_center in tqdm(uniform_centers):
+        rendered = render_with_oracle(cam_center, object_center, pipe, oracle_gaussians, torch.tensor([1.0, 1.0, 1.0], device="cuda"), reference_camera)
         oracle_renders.append(rendered.clamp(0, 1))
     middle_ids = np.random.choice(middle_circle_indices, size=6, replace=False)
     selected_cams = []
