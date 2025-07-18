@@ -129,6 +129,7 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
 
     oracle_gaussians = GaussianModel(dataset.sh_degree)
     oracle_gaussians.load_ply(os.path.join(args.oracle_model_path, "point_cloud/iteration_30000/point_cloud.ply"))
+    oracle_gaussians.eval()
 
     object_center = oracle_gaussians.get_xyz.mean(dim=0).detach()
     reference_camera = scene.getAllCameras()[0]
