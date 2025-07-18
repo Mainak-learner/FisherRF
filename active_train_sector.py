@@ -38,6 +38,7 @@ os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
 def get_robust_init_pose(proposal_uvs, uncertainties, u_bounds, v_bounds, strategy="topk-centroid", k=5, eval_selected_cams=None):
     if strategy == "weighted":
         w = uncertainties / (uncertainties.sum() + 1e-8)
+        w = w.detach().cpu().numpy()  # 🔥 FIX
         return tuple(np.sum(w[:, None] * np.array(proposal_uvs), axis=0))
     elif strategy == "topk-centroid":
         topk_idx = torch.topk(uncertainties, k=k).indices
