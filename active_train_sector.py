@@ -367,11 +367,11 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
                 closest_idx = np.argmin(uv_dists)
                 sector_init_poses.append(proposal_centers[closest_idx].detach().cpu().numpy())
 
-                fisherrf_cam = candidate_cams[max_unc_idx]
-                fisherrf_rendered = render(fisherrf_cam, gaussians, pipe, background)["render"].clamp(0, 1)
+                # fisherrf_cam = candidate_cams[max_unc_idx]
+                # fisherrf_rendered = render(fisherrf_cam, gaussians, pipe, background)["render"].clamp(0, 1)
 
-                np.save(os.path.join(sector_dir, "fisherrf_pose.npy"), fisherrf_cam.camera_center.cpu().numpy())
-                TF.to_pil_image(fisherrf_rendered.cpu()).save(os.path.join(sector_dir, "fisherrf_image.png"))
+                # np.save(os.path.join(sector_dir, "fisherrf_pose.npy"), fisherrf_cam.camera_center.cpu().numpy())
+                # TF.to_pil_image(fisherrf_rendered.cpu()).save(os.path.join(sector_dir, "fisherrf_image.png"))
                 image_encoder = ImageEncoder(output_dim=128).to("cuda")
 
                 center_opt, uv_opt = selector.optimize_gp_posterior_dkl(
