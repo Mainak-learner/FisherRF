@@ -392,7 +392,8 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
                 #     steps=args.pose_optim_steps,
                 #     lr=args.pose_lr
                 # )
-                oracle_img = render_with_oracle(uv2car_torch(init_pose[0], init_pose[1]).squeeze(0) * sample_radius, object_center, pipe, oracle_gaussians, background, reference_camera)
+                init_pose_tensor = torch.tensor(init_pose, dtype=torch.float32, device="cuda")
+                oracle_img = render_with_oracle(uv2car_torch(init_pose_tensor[0], init_pose_tensor[1]).squeeze(0) * sample_radius, object_center, pipe, oracle_gaussians, background, reference_camera)
                 deepkgp_rendered_img = render_fn(center_opt, object_center, pipe, gaussians, background, reference_camera)
                 final_cam = DummyCamera(*look_at(center_opt.detach(), object_center.detach()), reference_camera, image=oracle_img.detach())
                 
