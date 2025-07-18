@@ -159,7 +159,7 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
     oracle_renders = []
     for cam in tqdm(uniform_test_cameras):
         rendered = render(cam, oracle_gaussians, pipe, background)["render"]
-        oracle_renders.append(rendered.clamp(0, 1).detach().cpu())
+        oracle_renders.append(rendered.clamp(0, 1))
     middle_ids = np.random.choice(middle_circle_indices, size=6, replace=False)
     selected_cams = []
 
