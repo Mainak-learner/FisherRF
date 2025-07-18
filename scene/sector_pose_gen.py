@@ -1,5 +1,28 @@
 import numpy as np
 import torch
+import torch.nn.functional as F
+
+def sample_uniform_sphere_views(num_views=400, radius=1.0, object_center=torch.tensor([0.0, 0.0, 0.0])):
+    """
+    Generate uniformly distributed camera centers and directions on a sphere.
+
+    Returns:
+        - centers: (N, 3) tensor of camera centers
+        - directions: (N, 3) tensor of normalized viewing directions (toward object_center)
+    """
+    indices = np.arange(0, num_views, dtype=np.float32) + 0.5
+    phi = np.arccos(1 - 2 * indices / num_views)
+    theta = np.pi * (1 + 5**0.5) * indices
+
+    x = radius * np.sin(phi) * np.cos(theta)
+    y = radius * np.sin(phi) * np.sin(theta)
+    z = radius * np.cos(phi)
+
+    centers = torch.tensor(np.stack([x, y, z], axis=1), dtype=torch.float32)
+    directions = F.normalize(object_center[None, :] - centers, dim=1)
+
+    return centers, directions
+
 
 def generate_circular_hemisphere_poses(center, num_circles=9, min_poses=30, radius=1.5):
     """

@@ -33,6 +33,8 @@ import torch.backends.cudnn as cudnn
 import random
 import torch.nn.functional as F
 import pandas as pd
+from scene.sector_pose_gen import sample_uniform_sphere_views  # wherever you placed it
+
 os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
 
 def get_robust_init_pose(proposal_uvs, uncertainties, u_bounds, v_bounds, strategy="topk-centroid", k=5, eval_selected_cams=None):
@@ -145,7 +147,18 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
     #     img_path = f"oracle_gt_visualization/proposal_pose_{idx}.png"
     #     TF.to_pil_image(gt_img.cpu()).save(img_path)
     set_global_seed(args.seed)
+    centers, directions = sample_uniform_sphere_views(num_views=100, radius=sample_radius, object_center=object_center)
 
+    uniform_test_cameras = []
+    for center, direction in zip(centers, directions):
+        cam_params = look_at(center, object_center, reference_camera)
+        cam = DummyCamera(*cam_params, reference_camera)
+        uniform_test_cameras.append(cam)
+
+    oracle_renders = []
+    for cam in tqdm(uniform_test_cameras):
+        rendered = render(cam, oracle_gaussians, pipe, background)["render"]
+        oracle_renders.append(rendered.clamp(0, 1).detach().cpu())
     middle_ids = np.random.choice(middle_circle_indices, size=6, replace=False)
     selected_cams = []
 
@@ -228,14 +241,13 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
     psnr_total, ssim_total, lpips_total = 0.0, 0.0, 0.0
     test_cams = scene.getAllCameras(1.0)
 
-    for cam in test_cams:
+    for i, cam in enumerate(uniform_test_cameras):
         rendered = render(cam, gaussians, pipe, background)["render"].clamp(0, 1)
-        gt_image = cam.original_image.clamp(0, 1).to(rendered.device)
-        psnr_total += psnr(rendered, gt_image).mean().item()
-        ssim_total += ssim(rendered, gt_image).mean().item()
-        lpips_total += lpips_metric(rendered, gt_image).mean().item()
+        psnr_total += psnr(rendered, oracle_renders[i]).mean().item()
+        ssim_total += ssim(rendered, oracle_renders[i]).mean().item()
+        lpips_total += lpips_metric(rendered, oracle_renders[i]).mean().item()
 
-    num_eval = len(test_cams)
+    num_eval = len(uniform_test_cameras)
     avg_psnr = psnr_total / num_eval
     avg_ssim = ssim_total / num_eval
     avg_lpips = lpips_total / num_eval
@@ -463,14 +475,13 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
         psnr_total, ssim_total, lpips_total = 0.0, 0.0, 0.0
         test_cams = scene.getAllCameras(1.0)
 
-        for cam in test_cams:
+        for i, cam in enumerate(uniform_test_cameras):
             rendered = render(cam, gaussians, pipe, background)["render"].clamp(0, 1)
-            gt_image = cam.original_image.clamp(0, 1).to(rendered.device)
-            psnr_total += psnr(rendered, gt_image).mean().item()
-            ssim_total += ssim(rendered, gt_image).mean().item()
-            lpips_total += lpips_metric(rendered, gt_image).mean().item()
+            psnr_total += psnr(rendered, oracle_renders[i]).mean().item()
+            ssim_total += ssim(rendered, oracle_renders[i]).mean().item()
+            lpips_total += lpips_metric(rendered, oracle_renders[i]).mean().item()
 
-        num_eval = len(test_cams)
+        num_eval = len(uniform_test_cameras)
         avg_psnr = psnr_total / num_eval
         avg_ssim = ssim_total / num_eval
         avg_lpips = lpips_total / num_eval
