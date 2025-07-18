@@ -360,7 +360,7 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
                 final_cam = DummyCamera(*look_at(center_opt.detach(), object_center.detach()), reference_camera, image=oracle_img.detach())
             elif args.deepkgp:
                 uncertainties = selector.compute_fisher_uncertainty(gaussians, candidate_cams, I_train_diag, pipe, background)
-                init_pose = get_robust_init_pose(proposal_uvs, uncertainties, u_bounds, v_bounds, strategy="weighted", eval_selected_cams=eval_selected_cams)
+                init_pose = get_robust_init_pose(proposal_uvs, uncertainties, u_bounds, v_bounds, strategy="middle", eval_selected_cams=eval_selected_cams)
 
                 # Find proposal pose closest to midpoint to record as init
                 uv_dists = [np.linalg.norm(np.array(uv) - np.array(init_pose)) for uv in proposal_uvs]
@@ -392,7 +392,7 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
                     steps=args.pose_optim_steps,
                     lr=args.pose_lr
                 )
-                oracle_img = render_with_oracle(center_opt, object_center, pipe, oracle_gaussians, background, reference_camera)
+                oracle_img = render_with_oracle(uv2car_torch(init_pose[0], init_pose[1]).squeeze(0) * sample_radius, object_center, pipe, oracle_gaussians, background, reference_camera)
                 deepkgp_rendered_img = render_fn(center_opt, object_center, pipe, gaussians, background, reference_camera)
                 final_cam = DummyCamera(*look_at(center_opt.detach(), object_center.detach()), reference_camera, image=oracle_img.detach())
                 
