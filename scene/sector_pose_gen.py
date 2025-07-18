@@ -18,7 +18,7 @@ def sample_uniform_sphere_views(num_views=400, radius=1.0, object_center=torch.t
     y = radius * np.sin(phi) * np.sin(theta)
     z = radius * np.cos(phi)
 
-    centers = torch.tensor(np.stack([x, y, z], axis=1), dtype=torch.float32)
+    centers = torch.tensor(np.stack([x, y, z], axis=1), dtype=torch.float32, device=object_center.device)
     directions = F.normalize(object_center[None, :] - centers, dim=1)
 
     return centers, directions
