@@ -386,28 +386,28 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
                 # TF.to_pil_image(fisherrf_rendered.cpu()).save(os.path.join(sector_dir, "fisherrf_image.png"))
                 image_encoder = ImageEncoder(output_dim=128).to("cuda")
 
-                # center_opt, uv_opt = selector.optimize_gp_posterior_dkl(
-                #     proposal_uvs=[all_uvs[i] for i in sector_indices],
-                #     proposal_centers=[all_centers[i].cpu().numpy() for i in sector_indices],
-                #     uncertainties=uncertainties,
-                #     init_uv=init_pose,
-                #     uv_bounds=(u_bounds, v_bounds),
-                #     radius=sample_radius,
-                #     object_center=object_center,
-                #     selected_cameras=eval_selected_cams,
-                #     gaussians=gaussians,
-                #     pipe=pipe,
-                #     background=background,
-                #     reference_camera=reference_camera,
-                #     render_fn=render_fn,
-                #     image_encoder=image_encoder,
-                #     steps=args.pose_optim_steps,
-                #     lr=args.pose_lr
-                # )
-                init_pose_tensor = torch.tensor(init_pose, dtype=torch.float32, device="cuda")
-                u = init_pose_tensor[0].unsqueeze(0)  # shape [1]
-                v = init_pose_tensor[1].unsqueeze(0)  # shape [1]
-                center_opt = uv2car_torch(u, v).squeeze(0) * sample_radius
+                center_opt, uv_opt = selector.optimize_gp_posterior_dkl(
+                    proposal_uvs=[all_uvs[i] for i in sector_indices],
+                    proposal_centers=[all_centers[i].cpu().numpy() for i in sector_indices],
+                    uncertainties=uncertainties,
+                    init_uv=init_pose,
+                    uv_bounds=(u_bounds, v_bounds),
+                    radius=sample_radius,
+                    object_center=object_center,
+                    selected_cameras=eval_selected_cams,
+                    gaussians=gaussians,
+                    pipe=pipe,
+                    background=background,
+                    reference_camera=reference_camera,
+                    render_fn=render_fn,
+                    image_encoder=image_encoder,
+                    steps=args.pose_optim_steps,
+                    lr=args.pose_lr
+                )
+                # init_pose_tensor = torch.tensor(init_pose, dtype=torch.float32, device="cuda")
+                # u = init_pose_tensor[0].unsqueeze(0)  # shape [1]
+                # v = init_pose_tensor[1].unsqueeze(0)  # shape [1]
+                # center_opt = uv2car_torch(u, v).squeeze(0) * sample_radius
                 oracle_img = render_with_oracle(center_opt, object_center, pipe, oracle_gaussians, background, reference_camera)
                 deepkgp_rendered_img = render_fn(center_opt, object_center, pipe, gaussians, background, reference_camera)
                 final_cam = DummyCamera(*look_at(center_opt.detach(), object_center.detach()), reference_camera, image=oracle_img.detach())
