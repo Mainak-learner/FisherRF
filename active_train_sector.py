@@ -373,7 +373,7 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
                 final_cam = DummyCamera(*look_at(center_opt.detach(), object_center.detach()), reference_camera, image=oracle_img.detach())
             elif args.deepkgp:
                 uncertainties = selector.compute_fisher_uncertainty(gaussians, candidate_cams, I_train_diag, pipe, background)
-                init_pose = get_robust_init_pose(proposal_uvs, uncertainties, u_bounds, v_bounds, strategy="weighted", eval_selected_cams=eval_selected_cams)
+                init_pose = get_robust_init_pose(proposal_uvs, uncertainties, u_bounds, v_bounds, strategy="topk-centroid", eval_selected_cams=eval_selected_cams)
 
                 # Find proposal pose closest to midpoint to record as init
                 uv_dists = [np.linalg.norm(np.array(uv) - np.array(init_pose)) for uv in proposal_uvs]
