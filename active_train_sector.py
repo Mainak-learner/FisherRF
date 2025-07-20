@@ -40,7 +40,7 @@ os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
 def get_robust_init_pose(proposal_uvs, uncertainties, u_bounds, v_bounds, strategy="topk-centroid", k=5, eval_selected_cams=None):
     if strategy == "weighted":
         w = uncertainties / (uncertainties.sum() + 1e-8)
-        w = w.detach().cpu().numpy()  # 🔥 FIX
+        w = w.detach().cpu().numpy()
         return tuple(np.sum(w[:, None] * np.array(proposal_uvs), axis=0))
     elif strategy == "topk-centroid":
         topk_idx = torch.topk(uncertainties, k=k).indices
@@ -373,7 +373,7 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
                 final_cam = DummyCamera(*look_at(center_opt.detach(), object_center.detach()), reference_camera, image=oracle_img.detach())
             elif args.deepkgp:
                 uncertainties = selector.compute_fisher_uncertainty(gaussians, candidate_cams, I_train_diag, pipe, background)
-                init_pose = get_robust_init_pose(proposal_uvs, uncertainties, u_bounds, v_bounds, strategy="middle", eval_selected_cams=eval_selected_cams)
+                init_pose = get_robust_init_pose(proposal_uvs, uncertainties, u_bounds, v_bounds, strategy="weighted", eval_selected_cams=eval_selected_cams)
 
                 # Find proposal pose closest to midpoint to record as init
                 uv_dists = [np.linalg.norm(np.array(uv) - np.array(init_pose)) for uv in proposal_uvs]
