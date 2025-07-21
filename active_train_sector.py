@@ -37,7 +37,7 @@ from scene.sector_pose_gen import sample_uniform_sphere_views  # wherever you pl
 
 os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
 
-def get_robust_init_pose(proposal_uvs, uncertainties, u_bounds, v_bounds, strategy="topk-centroid", k=5, eval_selected_cams=None):
+def get_robust_init_pose(proposal_uvs, uncertainties, u_bounds, v_bounds, sample_radius, strategy="topk-centroid", k=5, eval_selected_cams=None):
     if strategy == "weighted":
         w = uncertainties / (uncertainties.sum() + 1e-8)
         w = w.detach().cpu().numpy()
@@ -49,7 +49,7 @@ def get_robust_init_pose(proposal_uvs, uncertainties, u_bounds, v_bounds, strate
     elif strategy == "diverse-fisher":
         scores = []
         for i, uv in enumerate(proposal_uvs):
-            dist = min(np.linalg.norm(np.array(uv) - np.array(cam.uv)) for cam in eval_selected_cams)
+            dist = min(np.linalg.norm(((uv2car_torch(uv) * sample_radius) - cam.camera_center).detach().cpu().numpy() for cam in eval_selected_cams))
             scores.append(uncertainties[i].item() * dist)
         return proposal_uvs[np.argmax(scores)]
     else:  # default to midpoint
@@ -373,12 +373,12 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
                 final_cam = DummyCamera(*look_at(center_opt.detach(), object_center.detach()), reference_camera, image=oracle_img.detach())
             elif args.deepkgp:
                 uncertainties = selector.compute_fisher_uncertainty(gaussians, candidate_cams, I_train_diag, pipe, background)
-                init_pose = get_robust_init_pose(proposal_uvs, uncertainties, u_bounds, v_bounds, strategy="topk-centroid", eval_selected_cams=eval_selected_cams)
+                init_pose = get_robust_init_pose(proposal_uvs, uncertainties, u_bounds, v_bounds, sample_radius, strategy="diverse-fisher", eval_selected_cams=eval_selected_cams)
 
-                # Find proposal pose closest to midpoint to record as init
-                uv_dists = [np.linalg.norm(np.array(uv) - np.array(init_pose)) for uv in proposal_uvs]
-                closest_idx = np.argmin(uv_dists)
-                sector_init_poses.append(proposal_centers[closest_idx].detach().cpu().numpy())
+                # # Find proposal pose closest to midpoint to record as init
+                # uv_dists = [np.linalg.norm(np.array(uv) - np.array(init_pose)) for uv in proposal_uvs]
+                # closest_idx = np.argmin(uv_dists)
+                # sector_init_poses.append(proposal_centers[closest_idx].detach().cpu().numpy())
 
                 # fisherrf_cam = candidate_cams[max_unc_idx]
                 # fisherrf_rendered = render(fisherrf_cam, gaussians, pipe, background)["render"].clamp(0, 1)
