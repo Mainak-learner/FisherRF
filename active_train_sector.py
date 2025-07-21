@@ -48,8 +48,8 @@ def get_robust_init_pose(proposal_uvs, uncertainties, u_bounds, v_bounds, sample
         return tuple(np.mean(topk_uvs, axis=0))
     elif strategy == "diverse-fisher":
         scores = []
-        uv_tensor = torch.tensor(uv, dtype=torch.float32, device="cuda")
         for i, uv in enumerate(proposal_uvs):
+            uv_tensor = torch.tensor(uv, dtype=torch.float32, device="cuda")
             dist = min([
                     np.linalg.norm(
                         ((uv2car_torch(uv_tensor[0].unsqueeze(0), uv_tensor[1].unsqueeze(0)) * sample_radius) - cam.camera_center).detach().cpu().numpy()
