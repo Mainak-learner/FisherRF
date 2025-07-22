@@ -219,28 +219,66 @@ class VDGPFisherNBVSelector(Module):
         final_center = uv2car_torch(u.detach(), v.detach()).squeeze(0) * radius
         return final_center, final_uv
 
+class ThinPlateSpline2DKernel(torch.nn.Module):
+    """
+    Implements the closed-form 2D thin-plate spline covariance function:
+        c(r) = 2r^2 log|r| - (1 + 2 log(R))r^2 + R^2
+    where:
+        r = ||x - x'||
+        R = max pairwise distance (controls regularization)
+    """
+    def __init__(self):
+        super().__init__()
+        self.eps = 1e-6  # stability to avoid log(0)
 
-class GPFeatureExtractor(torch.nn.Sequential):
+    def forward(self, x1, x2):
+        x1 = x1 if x1.ndim == 2 else x1.view(-1, x1.size(-1))
+        x2 = x2 if x2.ndim == 2 else x2.view(-1, x2.size(-1))
+
+        dists = torch.cdist(x1, x2) + self.eps  # shape (N, M)
+        R = torch.max(dists).detach()  # scalar
+
+        term1 = 2 * (dists ** 2) * torch.log(dists)
+        term2 = (1 + 2 * torch.log(R)) * (dists ** 2)
+        term3 = R ** 2
+
+        return term1 - term2 + term3
+
+class GPFeatureExtractor(nn.Module):
     def __init__(self, input_dim):
-        super().__init__(
-            nn.Linear(input_dim, 256),   # Wider first layer for more flexibility
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Linear(input_dim, 256),
             nn.ReLU(),
             nn.Linear(256, 128),
             nn.ReLU(),
-            nn.Linear(128, 64),          # Final output for GP kernel input
+            nn.Linear(128, 2)  # Output: meaningful 2D coordinates
         )
 
-class DeepGPModel(ExactGP):
-    def __init__(self, train_x, train_y, likelihood, feature_extractor):
+    def forward(self, x):
+        out = self.net(x)
+        return F.normalize(out, dim=-1)  # Encourage outputs on unit circle
+
+class DeepTPSGPModel(ExactGP):
+    def __init__(self, train_x, train_y, likelihood, feature_extractor, kernel_type="tps"):
         super().__init__(train_x, train_y, likelihood)
         self.feature_extractor = feature_extractor
         self.mean_module = gpytorch.means.ConstantMean()
-        self.covar_module = ScaleKernel(RBFKernel())
+        self.kernel_type = kernel_type
+
+        if kernel_type == "tps":
+            self.base_kernel = ThinPlateSpline2DKernel()
+        elif kernel_type == "rbf":
+            self.base_kernel = RBFKernel()
+        else:
+            raise ValueError(f"Unsupported kernel type: {kernel_type}")
+
+        self.covar_module = ScaleKernel(lambda x1, x2: self.base_kernel(x1, x2)) if kernel_type == "tps" else ScaleKernel(self.base_kernel)
 
     def forward(self, x):
-        x = self.feature_extractor(x)
-        mean_x = self.mean_module(x)
-        covar_x = self.covar_module(x)
+        x_feat = self.feature_extractor(x)
+        mean_x = self.mean_module(x_feat)
+        covar_x = self.covar_module(x_feat, x_feat)
         return gpytorch.distributions.MultivariateNormal(mean_x, covar_x)
 
 
@@ -257,10 +295,12 @@ class GPFisherNBVSelector(Module):
         self.I_test: bool = args.I_test
         self.I_acq_reg: bool = args.I_acq_reg
         self.sim_lambda = 0.3
+        self.kernel_type = getattr(args, "kernel_type", "rbf")  # default to 'rbf'
 
         #Deep GP:
         if args.deepkgp:
-            self.feature_extractor = GPFeatureExtractor(input_dim=3).to(self.device)
+            out_dim = 2 if self.kernel_type == "tps" else 64
+            self.feature_extractor = GPFeatureExtractor(input_dim=3, output_dim=out_dim).to(self.device)            
             self.likelihood = GaussianLikelihood().to(self.device)
             self.model = None  # will be set at training time
             self.ucb_beta = 2.0
@@ -288,7 +328,8 @@ class GPFisherNBVSelector(Module):
         X_train = X_train.to(self.device)
         y_train = y_train.squeeze().to(self.device)
 
-        self.model = DeepGPModel(X_train, y_train, self.likelihood, self.feature_extractor).to(self.device)
+        self.model = DeepTPSGP(self.feature_extractor, self.likelihood, kernel_type=self.kernel_type).to(self.device)
+        self.model.initialize_gp(X_train, y_train)        
         self.model.train()
         self.likelihood.train()
 
@@ -351,57 +392,6 @@ class GPFisherNBVSelector(Module):
         sampled_acq = samples
 
         return sampled_acq.mean(dim=0)
-    def optimize_gp_posterior(self, proposal_uvs, proposal_centers, uncertainties, init_uv, uv_bounds, radius, steps=200, lr=1e-2):
-        """
-        Args:
-            proposal_uvs: (N, 2) list of (u, v) for training proposals
-            proposal_centers: (N, 3) world cam centers corresponding to proposal_uvs
-            uncertainties: (N,) tensor - uncertainty values at proposal poses
-            init_uv: (u, v) tuple - initial uv to optimize from
-            uv_bounds: ((u_min, u_max), (v_min, v_max))
-            radius: float - fixed radius
-            steps: int - number of gradient ascent steps
-            lr: float - learning rate
-        Returns:
-            optimized_cam_center: (3,) tensor
-            optimized_uv: (u, v) tuple
-        """
-        device = self.device
-        u_min, u_max = uv_bounds[0]
-        v_min, v_max = uv_bounds[1]
-
-        # Optimize in uv-space
-        u = torch.tensor([init_uv[0]], device=device, dtype=torch.float32, requires_grad=True)
-        v = torch.tensor([init_uv[1]], device=device, dtype=torch.float32, requires_grad=True)
-
-        # Prepare training data
-        X_train = torch.tensor(np.array(proposal_centers), dtype=torch.float32, device=device)  # (N, 3)
-        y_train = uncertainties.to(device).unsqueeze(1)  # (N, 1)
-
-        # Compute kernel matrix K and its inverse (detached!)
-        with torch.no_grad():
-            K = self.rbf_kernel(X_train, X_train) + self.noise * torch.eye(X_train.size(0), device=device)
-            K_inv = torch.inverse(K)  # (N, N)
-
-        optimizer = torch.optim.Adam([u, v], lr=lr)
-
-        for _ in range(steps):
-            optimizer.zero_grad()
-
-            cam_center = uv2car_torch(u, v) * radius  # (1, 3)
-            K_s = self.rbf_kernel(X_train, cam_center)  # (N, 1)
-
-            mu = K_s.T @ K_inv @ y_train  # (1, 1), differentiable w.r.t. u and v
-            loss = -mu  # maximize posterior mean
-            loss.backward()
-            optimizer.step()
-
-            u.data.clamp_(u_min, u_max)
-            v.data.clamp_(v_min, v_max)
-
-        final_uv = (u.item(), v.item())
-        final_center = uv2car_torch(u.detach(), v.detach()).squeeze(0) * radius
-        return final_center, final_uv
 
     def optimize_gp_posterior_dkl(
         self,
