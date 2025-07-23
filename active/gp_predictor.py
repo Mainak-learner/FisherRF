@@ -273,7 +273,7 @@ class DeepTPSGPModel(ExactGP):
         else:
             raise ValueError(f"Unsupported kernel type: {kernel_type}")
 
-        self.covar_module = ScaleKernel(lambda x1, x2: self.base_kernel(x1, x2)) if kernel_type == "tps" else ScaleKernel(self.base_kernel)
+        self.covar_module = self.base_kernel if kernel_type == "tps" else ScaleKernel(self.base_kernel)
 
     def forward(self, x):
         x_feat = self.feature_extractor(x)
