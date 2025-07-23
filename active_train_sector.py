@@ -581,7 +581,7 @@ if __name__ == "__main__":
     parser.add_argument("--deepkgp", action="store_true", help="Use Deep Kernel GP for uncertainty approximation")
     parser.add_argument("--vdgp", action="store_true", help="Use Variational Deep GP for uncertainty approximation")
     parser.add_argument("--max_nbv_iterations", type=int, default=5, help="Iterations of Revolution around the object")
-    parser.add_argument("--kernel_type", type=str, default="rbf", help="kernel type for deepkgp", choices=["tps", "rbf"])
+    parser.add_argument("--kernel_type", type=str, default="tps", help="kernel type for deepkgp", choices=["tps", "rbf"])
     args = parser.parse_args()
 
     # Define sweep values
