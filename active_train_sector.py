@@ -275,6 +275,8 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
     gaussians_deepkgp = deepcopy(gaussians)
     selected_cams_fisher = deepcopy(selected_cams)
     selected_cams_deepkgp = deepcopy(selected_cams)
+    eval_selected_cams_fisher = deepcopy(selected_cams)
+    eval_selected_cams_deepkgp = deepcopy(selected_cams)
     for method in ["fisher", "deepkgp"]:
         print(f"\n=== Starting sector-based training with method: {method} ===")
 
