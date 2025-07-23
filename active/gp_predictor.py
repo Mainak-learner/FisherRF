@@ -245,14 +245,14 @@ class ThinPlateSpline2DKernel(torch.nn.Module):
         return term1 - term2 + term3
 
 class GPFeatureExtractor(nn.Module):
-    def __init__(self, input_dim):
+    def __init__(self, input_dim, output_dim):
         super().__init__()
         self.net = nn.Sequential(
             nn.Linear(input_dim, 256),
             nn.ReLU(),
             nn.Linear(256, 128),
             nn.ReLU(),
-            nn.Linear(128, 2)  # Output: meaningful 2D coordinates
+            nn.Linear(128, output_dim)  # Output: meaningful 2D coordinates
         )
 
     def forward(self, x):
