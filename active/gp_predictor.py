@@ -328,8 +328,7 @@ class GPFisherNBVSelector(Module):
         X_train = X_train.to(self.device)
         y_train = y_train.squeeze().to(self.device)
 
-        self.model = DeepTPSGP(self.feature_extractor, self.likelihood, kernel_type=self.kernel_type).to(self.device)
-        self.model.initialize_gp(X_train, y_train)        
+        self.model = DeepTPSGPModel(X_train, y_train, self.likelihood, self.feature_extractor, kernel_type=self.kernel_type).to(self.device)       
         self.model.train()
         self.likelihood.train()
 
