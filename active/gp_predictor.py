@@ -13,6 +13,7 @@ import pyro
 import pyro.contrib.gp as gp
 from pyro.infer import Trace_ELBO
 import gpytorch
+from gpytorch.kernels import Kernel
 from gpytorch.models import ExactGP
 from gpytorch.kernels import ScaleKernel, RBFKernel
 from gpytorch.mlls import ExactMarginalLogLikelihood
@@ -219,34 +220,26 @@ class VDGPFisherNBVSelector(Module):
         final_center = uv2car_torch(u.detach(), v.detach()).squeeze(0) * radius
         return final_center, final_uv
 
-class ThinPlateSpline2DKernel(torch.nn.Module):
+class ThinPlateSplineKernelGP(Kernel):
     """
-    Implements the closed-form 2D thin-plate spline covariance function:
-        c(r) = 2r^2 log|r| - (1 + 2 log(R))r^2 + R^2
-    where:
-        r = ||x - x'||
-        R = max pairwise distance (controls regularization)
+    GPyTorch-compatible Thin Plate Spline kernel.
+    k(x, x') = 2r^2 log(r) - (1 + 2 log(R))r^2 + R^2
     """
-    def __init__(self):
-        super().__init__()
-        self.eps = 1e-6  # stability to avoid log(0)
+    def __init__(self, **kwargs):
+        super().__init__(has_lengthscale=False, **kwargs)
+        self.eps = 1e-6
 
-    def forward(self, x1, x2):
-        x1 = x1 if x1.ndim == 2 else x1.view(-1, x1.size(-1))
-        x2 = x2 if x2.ndim == 2 else x2.view(-1, x2.size(-1))
-
-        dists = torch.cdist(x1, x2) + self.eps  # shape (N, M)
+    def forward(self, x1, x2, **params):
+        dists = torch.cdist(x1, x2) + self.eps
         R = torch.max(dists).detach()
 
-        term1 = 2 * (dists ** 2) * torch.log(dists)
-        term2 = (1 + 2 * torch.log(R)) * (dists ** 2)
-        term3 = R ** 2
-        K = term1 - term2 + term3
+        k = 2 * (dists ** 2) * torch.log(dists) - (1 + 2 * torch.log(R)) * (dists ** 2) + R ** 2
 
-        if x1.shape[0] == x2.shape[0] and torch.allclose(x1, x2):  # square matrix case
-            K = K + self.eps * torch.eye(K.shape[0], device=K.device)
+        # Ensure positive definiteness
+        if x1.shape[0] == x2.shape[0] and torch.allclose(x1, x2):
+            k = k + self.eps * torch.eye(k.shape[0], device=k.device)
 
-        return K
+        return k
 
 class GPFeatureExtractor(nn.Module):
     def __init__(self, input_dim, output_dim):
@@ -271,13 +264,13 @@ class DeepTPSGPModel(ExactGP):
         self.kernel_type = kernel_type
 
         if kernel_type == "tps":
-            self.base_kernel = ThinPlateSpline2DKernel()
-        elif kernel_type == "rbf":
+            self.base_kernel = ThinPlateSplineKernelGP()
+        else:
             self.base_kernel = RBFKernel()
         else:
             raise ValueError(f"Unsupported kernel type: {kernel_type}")
 
-        self.covar_module = self.base_kernel if kernel_type == "tps" else ScaleKernel(self.base_kernel)
+        self.covar_module = ScaleKernel(self.base_kernel)
 
     def forward(self, x):
         x_feat = self.feature_extractor(x)
