@@ -34,6 +34,7 @@ import random
 import torch.nn.functional as F
 import pandas as pd
 from scene.sector_pose_gen import sample_uniform_sphere_views  # wherever you placed it
+from copy import deepcopy
 
 os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
 
@@ -269,252 +270,273 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
         image_feat_dim = 128  # same as Φ output dim   
     else:
         selector = GPFisherNBVSelector(args, device="cuda")
-    for train_iter in range(1, args.max_nbv_iterations + 1):
-        print(f"=== Iteration {train_iter}: selecting NBVs from sectors ===")
 
-        sector_selections = []
-        sector_init_poses = []
+    gaussians_fisher = deepcopy(gaussians)
+    gaussians_deepkgp = deepcopy(gaussians)
+    selected_cams_fisher = deepcopy(selected_cams)
+    selected_cams_deepkgp = deepcopy(selected_cams)
+    for method in ["fisher", "deepkgp"]:
+        print(f"\n=== Starting sector-based training with method: {method} ===")
 
-        if args.vdgp or args.deepkgp:
-            I_train_diag = compute_fisher_hessian(
-            gaussians, eval_selected_cams, pipe, background,
-            selector.filter_out_idx, selector.reg_lambda
-            )
-        for sector_id, sector_indices in sector_map.items():
-            sector_dir = f"oracle_gt_visualization_sectorwise/sector_{sector_id}"
-            os.makedirs(sector_dir, exist_ok=True)
+        # Assign clones based on method
+        if method == "fisher":
+            gaussians = gaussians_fisher
+            selected_cams = selected_cams_fisher
+            eval_selected_cams = eval_selected_cams_fisher
+        elif method == "deepkgp":
+            gaussians = gaussians_deepkgp
+            selected_cams = selected_cams_deepkgp
+            eval_selected_cams = eval_selected_cams_deepkgp
 
-            if len(sector_indices) == 0:
-                continue
+        used_uvs_global = set()
 
-            proposal_uvs = [all_uvs[idx] for idx in sector_indices]
-            proposal_centers = all_centers[sector_indices]
+        for train_iter in range(1, args.max_nbv_iterations + 1):
 
-            u_vals = [uv[0] for uv in proposal_uvs]
-            v_vals = [uv[1] for uv in proposal_uvs]
-            u_bounds = (min(u_vals), max(u_vals))
-            v_bounds = (min(v_vals), max(v_vals))
+            print(f"=== Iteration {train_iter}: selecting NBVs from sectors ===")
 
-            candidate_cams, candidate_images = [], []
-            for cam_center in proposal_centers:
-                dummy = DummyCamera(*look_at(cam_center.detach(), object_center.detach()), reference_camera)
-                rgb = render_with_oracle(cam_center, object_center, pipe, oracle_gaussians, background, reference_camera)
-                dummy.original_image = rgb.detach().clamp(0, 1).cuda()
-                render_pkg = render(dummy, gaussians, pipe, background)
-                candidate_cams.append(dummy)
-                candidate_images.append(render_pkg["render"])
+            sector_selections = []
+            sector_init_poses = []
 
-            if args.nbv_process=="selection":
-                uncertainties = selector.compute_fisher_uncertainty(gaussians, candidate_cams, I_train_diag, pipe, background)
+            if args.vdgp or args.deepkgp:
+                I_train_diag = compute_fisher_hessian(
+                gaussians, eval_selected_cams, pipe, background,
+                selector.filter_out_idx, selector.reg_lambda
+                )
+            for sector_id, sector_indices in sector_map.items():
+                sector_dir = f"oracle_gt_visualization_sectorwise/sector_{sector_id}"
+                os.makedirs(sector_dir, exist_ok=True)
 
-                # Filter candidate poses that have been used before (by UV)
-                available_idxs = []
-                for idx, uv in enumerate(proposal_uvs):
-                    uv_tuple = (round(uv[0], 5), round(uv[1], 5))  # round to reduce float precision issues
-                    if uv_tuple not in used_uvs_global:
-                        available_idxs.append(idx)
-
-                if not available_idxs:
-                    print(f"[Warning] All candidate poses in sector {sector_id} already used. Skipping.")
+                if len(sector_indices) == 0:
                     continue
 
-                # Select among unused
-                available_uncertainties = uncertainties[available_idxs]
-                max_local_idx = torch.argmax(available_uncertainties).item()
-                max_global_idx = available_idxs[max_local_idx]
+                proposal_uvs = [all_uvs[idx] for idx in sector_indices]
+                proposal_centers = all_centers[sector_indices]
 
-                # Register UV as used
-                uv_tuple = (round(proposal_uvs[max_global_idx][0], 5), round(proposal_uvs[max_global_idx][1], 5))
-                used_uvs_global.add(uv_tuple)
+                u_vals = [uv[0] for uv in proposal_uvs]
+                v_vals = [uv[1] for uv in proposal_uvs]
+                u_bounds = (min(u_vals), max(u_vals))
+                v_bounds = (min(v_vals), max(v_vals))
 
-                # Final selection
-                final_cam = candidate_cams[max_global_idx]
-                oracle_img = render_with_oracle(final_cam.camera_center, object_center, pipe, oracle_gaussians, background, reference_camera)
-                final_cam.original_image = oracle_img.detach().clamp(0.0, 1.0).cuda()         
-            elif args.vdgp:
-                pose_tensor = torch.stack([cam.camera_center for cam in candidate_cams], dim=0).float().to("cuda")  # (N, 3)
-                image_tensor = torch.stack(candidate_images, dim=0).float().to("cuda")  # (N, 3, H, W)
+                candidate_cams, candidate_images = [], []
+                for cam_center in proposal_centers:
+                    dummy = DummyCamera(*look_at(cam_center.detach(), object_center.detach()), reference_camera)
+                    rgb = render_with_oracle(cam_center, object_center, pipe, oracle_gaussians, background, reference_camera)
+                    dummy.original_image = rgb.detach().clamp(0, 1).cuda()
+                    render_pkg = render(dummy, gaussians, pipe, background)
+                    candidate_cams.append(dummy)
+                    candidate_images.append(render_pkg["render"])
 
-                # Step 2: Train Φ for this sector
-                phi = train_phi_sector(pose_tensor, image_tensor)
-                phi.eval()
-                selector = VDGPFisherNBVSelector(
-                    args,
-                    input_dim=pose_feat_dim + image_feat_dim,  # total input dim to GP1
-                    phi_pose_to_feat=phi,
-                    device="cuda"
-                ) 
-                # Compute Fisher-trace based uncertainty at proposal poses
-                uncertainties = selector.compute_fisher_uncertainty(gaussians, selected_cams, candidate_cams, pipe, background)
+                if method=="selection":
+                    uncertainties = selector.compute_fisher_uncertainty(gaussians, candidate_cams, I_train_diag, pipe, background)
 
-                # Select the most uncertain proposal
-                max_unc_idx = torch.argmax(uncertainties).item()
-                most_uncertain_uv = proposal_uvs[max_unc_idx]
-                # Apply small random perturbation
-                u_perturbed = most_uncertain_uv[0] + np.random.uniform(-0.02, 0.02)
-                v_perturbed = most_uncertain_uv[1] + np.random.uniform(-0.02, 0.02)
+                    # Filter candidate poses that have been used before (by UV)
+                    available_idxs = []
+                    for idx, uv in enumerate(proposal_uvs):
+                        uv_tuple = (round(uv[0], 5), round(uv[1], 5))  # round to reduce float precision issues
+                        if uv_tuple not in used_uvs_global:
+                            available_idxs.append(idx)
 
-                # Clamp to sector bounds
-                u_min, u_max = u_bounds
-                v_min, v_max = v_bounds
+                    if not available_idxs:
+                        print(f"[Warning] All candidate poses in sector {sector_id} already used. Skipping.")
+                        continue
 
-                u_perturbed = np.clip(u_perturbed, u_min, u_max)
-                v_perturbed = np.clip(v_perturbed, v_min, v_max)
+                    # Select among unused
+                    available_uncertainties = uncertainties[available_idxs]
+                    max_local_idx = torch.argmax(available_uncertainties).item()
+                    max_global_idx = available_idxs[max_local_idx]
 
-                init_pose = (u_perturbed, v_perturbed)
-                sector_init_poses.append(proposal_centers[max_unc_idx].detach().cpu().numpy())
-                center_opt, uv_opt = selector.optimize_gp_posterior_vdgp(
-                    proposal_uvs=[all_uvs[i] for i in sector_indices],
-                    proposal_centers=[all_centers[i].cpu().numpy() for i in sector_indices],
-                    uncertainties=uncertainties,  # <-- must be a torch.Tensor
-                    init_uv=init_pose,
-                    uv_bounds=(u_bounds, v_bounds),
-                    radius=sample_radius,
-                    object_center=object_center,  # <-- make sure this is passed
-                    steps=args.pose_optim_steps,
-                    lr=args.pose_lr
-                )
-                # Create DummyCamera for selected pose
-                oracle_img = render_with_oracle(center_opt, object_center, pipe, oracle_gaussians, background, reference_camera)
-                final_cam = DummyCamera(*look_at(center_opt.detach(), object_center.detach()), reference_camera, image=oracle_img.detach())
-            elif args.deepkgp:
-                uncertainties = selector.compute_fisher_uncertainty(gaussians, candidate_cams, I_train_diag, pipe, background)
-                if train_iter > 1:
-                    init_pose = get_robust_init_pose(proposal_uvs, uncertainties, u_bounds, v_bounds, sample_radius, strategy="diverse-fisher", eval_selected_cams=eval_selected_cams)
-                else:
-                    init_pose = get_robust_init_pose(proposal_uvs, uncertainties, u_bounds, v_bounds, sample_radius, strategy="topk-centroid", eval_selected_cams=eval_selected_cams)   
+                    # Register UV as used
+                    uv_tuple = (round(proposal_uvs[max_global_idx][0], 5), round(proposal_uvs[max_global_idx][1], 5))
+                    used_uvs_global.add(uv_tuple)
 
-                # # Find proposal pose closest to midpoint to record as init
-                # uv_dists = [np.linalg.norm(np.array(uv) - np.array(init_pose)) for uv in proposal_uvs]
-                # closest_idx = np.argmin(uv_dists)
-                # sector_init_poses.append(proposal_centers[closest_idx].detach().cpu().numpy())
+                    # Final selection
+                    final_cam = candidate_cams[max_global_idx]
+                    oracle_img = render_with_oracle(final_cam.camera_center, object_center, pipe, oracle_gaussians, background, reference_camera)
+                    final_cam.original_image = oracle_img.detach().clamp(0.0, 1.0).cuda()         
+                elif args.vdgp:
+                    pose_tensor = torch.stack([cam.camera_center for cam in candidate_cams], dim=0).float().to("cuda")  # (N, 3)
+                    image_tensor = torch.stack(candidate_images, dim=0).float().to("cuda")  # (N, 3, H, W)
 
-                # fisherrf_cam = candidate_cams[max_unc_idx]
-                # fisherrf_rendered = render(fisherrf_cam, gaussians, pipe, background)["render"].clamp(0, 1)
+                    # Step 2: Train Φ for this sector
+                    phi = train_phi_sector(pose_tensor, image_tensor)
+                    phi.eval()
+                    selector = VDGPFisherNBVSelector(
+                        args,
+                        input_dim=pose_feat_dim + image_feat_dim,  # total input dim to GP1
+                        phi_pose_to_feat=phi,
+                        device="cuda"
+                    ) 
+                    # Compute Fisher-trace based uncertainty at proposal poses
+                    uncertainties = selector.compute_fisher_uncertainty(gaussians, selected_cams, candidate_cams, pipe, background)
 
-                # np.save(os.path.join(sector_dir, "fisherrf_pose.npy"), fisherrf_cam.camera_center.cpu().numpy())
-                # TF.to_pil_image(fisherrf_rendered.cpu()).save(os.path.join(sector_dir, "fisherrf_image.png"))
-                image_encoder = ImageEncoder(output_dim=128).to("cuda")
+                    # Select the most uncertain proposal
+                    max_unc_idx = torch.argmax(uncertainties).item()
+                    most_uncertain_uv = proposal_uvs[max_unc_idx]
+                    # Apply small random perturbation
+                    u_perturbed = most_uncertain_uv[0] + np.random.uniform(-0.02, 0.02)
+                    v_perturbed = most_uncertain_uv[1] + np.random.uniform(-0.02, 0.02)
 
-                center_opt, uv_opt = selector.optimize_gp_posterior_dkl(
-                    proposal_uvs=[all_uvs[i] for i in sector_indices],
-                    proposal_centers=[all_centers[i].cpu().numpy() for i in sector_indices],
-                    uncertainties=uncertainties,
-                    init_uv=init_pose,
-                    uv_bounds=(u_bounds, v_bounds),
-                    radius=sample_radius,
-                    object_center=object_center,
-                    selected_cameras=eval_selected_cams,
-                    gaussians=gaussians,
-                    pipe=pipe,
-                    background=background,
-                    reference_camera=reference_camera,
-                    render_fn=render_fn,
-                    image_encoder=image_encoder,
-                    steps=args.pose_optim_steps,
-                    lr=args.pose_lr
-                )
-                # init_pose_tensor = torch.tensor(init_pose, dtype=torch.float32, device="cuda")
-                # u = init_pose_tensor[0].unsqueeze(0)  # shape [1]
-                # v = init_pose_tensor[1].unsqueeze(0)  # shape [1]
-                # center_opt = uv2car_torch(u, v).squeeze(0) * sample_radius
-                oracle_img = render_with_oracle(center_opt, object_center, pipe, oracle_gaussians, background, reference_camera)
-                deepkgp_rendered_img = render_fn(center_opt, object_center, pipe, gaussians, background, reference_camera)
-                final_cam = DummyCamera(*look_at(center_opt.detach(), object_center.detach()), reference_camera, image=oracle_img.detach())
-                
-                np.save(os.path.join(sector_dir, "deepkgp_pose.npy"), center_opt.cpu().numpy())
-                TF.to_pil_image(deepkgp_rendered_img.clamp(0, 1).cpu()).save(os.path.join(sector_dir, "deepkgp_image.png"))
+                    # Clamp to sector bounds
+                    u_min, u_max = u_bounds
+                    v_min, v_max = v_bounds
 
-            sector_selections.append(final_cam)
-            img_path = f"oracle_gt_visualization/pose_{len(eval_selected_cams) + len(sector_selections)}.png"
-            TF.to_pil_image(oracle_img.clamp(0, 1).cpu()).save(img_path)
+                    u_perturbed = np.clip(u_perturbed, u_min, u_max)
+                    v_perturbed = np.clip(v_perturbed, v_min, v_max)
 
-        sector_selected_cams = sector_selections  # Only train on new NBVs
-        eval_selected_cams += sector_selected_cams
-        selected_cams = eval_selected_cams
-
-        print(f"=== Training on {len(selected_cams)} views (sector round {train_iter}) ===")
-
-        viewpoint_stack = selected_cams.copy()
-
-        for iteration in tqdm(range(1, args.iterations + 1), desc=f"NBV Training Iter {train_iter}"):
-            gaussians.update_learning_rate(iteration)
-
-            if iteration % 1000 == 0:
-                gaussians.oneupSHdegree()
-
-            if not viewpoint_stack:
-                viewpoint_stack = selected_cams.copy()
-            viewpoint_cam = viewpoint_stack.pop(randint(0, len(viewpoint_stack) - 1))
-
-            render_pkg = render(viewpoint_cam, gaussians, pipe, background)
-            image = render_pkg["render"]
-            gt_image = viewpoint_cam.original_image.cuda()
-
-            Ll1 = l1_loss(image, gt_image)
-            loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image))
-            loss.backward()
-
-            with torch.no_grad():
-                if iteration < opt.densify_until_iter:
-                    viewspace_point_tensor, visibility_filter, radii = (
-                        render_pkg["viewspace_points"],
-                        render_pkg["visibility_filter"],
-                        render_pkg["radii"]
+                    init_pose = (u_perturbed, v_perturbed)
+                    sector_init_poses.append(proposal_centers[max_unc_idx].detach().cpu().numpy())
+                    center_opt, uv_opt = selector.optimize_gp_posterior_vdgp(
+                        proposal_uvs=[all_uvs[i] for i in sector_indices],
+                        proposal_centers=[all_centers[i].cpu().numpy() for i in sector_indices],
+                        uncertainties=uncertainties,  # <-- must be a torch.Tensor
+                        init_uv=init_pose,
+                        uv_bounds=(u_bounds, v_bounds),
+                        radius=sample_radius,
+                        object_center=object_center,  # <-- make sure this is passed
+                        steps=args.pose_optim_steps,
+                        lr=args.pose_lr
                     )
-                    gaussians.max_radii2D[visibility_filter] = torch.max(
-                        gaussians.max_radii2D[visibility_filter], radii[visibility_filter]
+                    # Create DummyCamera for selected pose
+                    oracle_img = render_with_oracle(center_opt, object_center, pipe, oracle_gaussians, background, reference_camera)
+                    final_cam = DummyCamera(*look_at(center_opt.detach(), object_center.detach()), reference_camera, image=oracle_img.detach())
+                elif method=="deepkgp":
+                    uncertainties = selector.compute_fisher_uncertainty(gaussians, candidate_cams, I_train_diag, pipe, background)
+                    if train_iter > 1:
+                        init_pose = get_robust_init_pose(proposal_uvs, uncertainties, u_bounds, v_bounds, sample_radius, strategy="diverse-fisher", eval_selected_cams=eval_selected_cams)
+                    else:
+                        init_pose = get_robust_init_pose(proposal_uvs, uncertainties, u_bounds, v_bounds, sample_radius, strategy="topk-centroid", eval_selected_cams=eval_selected_cams)   
+
+                    # # Find proposal pose closest to midpoint to record as init
+                    # uv_dists = [np.linalg.norm(np.array(uv) - np.array(init_pose)) for uv in proposal_uvs]
+                    # closest_idx = np.argmin(uv_dists)
+                    # sector_init_poses.append(proposal_centers[closest_idx].detach().cpu().numpy())
+
+                    # fisherrf_cam = candidate_cams[max_unc_idx]
+                    # fisherrf_rendered = render(fisherrf_cam, gaussians, pipe, background)["render"].clamp(0, 1)
+
+                    # np.save(os.path.join(sector_dir, "fisherrf_pose.npy"), fisherrf_cam.camera_center.cpu().numpy())
+                    # TF.to_pil_image(fisherrf_rendered.cpu()).save(os.path.join(sector_dir, "fisherrf_image.png"))
+                    image_encoder = ImageEncoder(output_dim=128).to("cuda")
+
+                    center_opt, uv_opt = selector.optimize_gp_posterior_dkl(
+                        proposal_uvs=[all_uvs[i] for i in sector_indices],
+                        proposal_centers=[all_centers[i].cpu().numpy() for i in sector_indices],
+                        uncertainties=uncertainties,
+                        init_uv=init_pose,
+                        uv_bounds=(u_bounds, v_bounds),
+                        radius=sample_radius,
+                        object_center=object_center,
+                        selected_cameras=eval_selected_cams,
+                        gaussians=gaussians,
+                        pipe=pipe,
+                        background=background,
+                        reference_camera=reference_camera,
+                        render_fn=render_fn,
+                        image_encoder=image_encoder,
+                        steps=args.pose_optim_steps,
+                        lr=args.pose_lr
                     )
-                    gaussians.add_densification_stats(viewspace_point_tensor, visibility_filter)
+                    # init_pose_tensor = torch.tensor(init_pose, dtype=torch.float32, device="cuda")
+                    # u = init_pose_tensor[0].unsqueeze(0)  # shape [1]
+                    # v = init_pose_tensor[1].unsqueeze(0)  # shape [1]
+                    # center_opt = uv2car_torch(u, v).squeeze(0) * sample_radius
+                    oracle_img = render_with_oracle(center_opt, object_center, pipe, oracle_gaussians, background, reference_camera)
+                    deepkgp_rendered_img = render_fn(center_opt, object_center, pipe, gaussians, background, reference_camera)
+                    final_cam = DummyCamera(*look_at(center_opt.detach(), object_center.detach()), reference_camera, image=oracle_img.detach())
+                    
+                    np.save(os.path.join(sector_dir, "deepkgp_pose.npy"), center_opt.cpu().numpy())
+                    TF.to_pil_image(deepkgp_rendered_img.clamp(0, 1).cpu()).save(os.path.join(sector_dir, "deepkgp_image.png"))
 
-                    if iteration > opt.densify_from_iter and iteration % opt.densification_interval == 0:
-                        size_threshold = 20 if iteration > opt.opacity_reset_interval else None
-                        gaussians.densify_and_prune(opt.densify_grad_threshold, args.min_opacity,
-                                                    scene.cameras_extent, size_threshold)
+                sector_selections.append(final_cam)
+                img_path = f"oracle_gt_visualization/pose_{len(eval_selected_cams) + len(sector_selections)}.png"
+                TF.to_pil_image(oracle_img.clamp(0, 1).cpu()).save(img_path)
 
-                    if iteration % opt.opacity_reset_interval == 0 or (
-                            dataset.white_background and iteration == opt.densify_from_iter):
-                        gaussians.reset_opacity()
+            sector_selected_cams = sector_selections  # Only train on new NBVs
+            eval_selected_cams += sector_selected_cams
+            selected_cams = eval_selected_cams
 
-                if iteration < args.iterations:
-                    gaussians.optimizer.step()
-                    gaussians.optimizer.zero_grad(set_to_none=True)
+            print(f"=== Training on {len(selected_cams)} views (sector round {train_iter}) ===")
 
-        # Evaluate using fixed train+test cameras
-        lpips_metric = lpips_func("cuda", net_type='vgg')
-        psnr_total, ssim_total, lpips_total = 0.0, 0.0, 0.0
-        test_cams = scene.getAllCameras(1.0)
+            viewpoint_stack = selected_cams.copy()
 
-        for i, cam in enumerate(uniform_test_cameras):
-            rendered = render(cam, gaussians, pipe, background)["render"].clamp(0, 1)
-            psnr_total += psnr(rendered, oracle_renders[i]).mean().item()
-            ssim_total += ssim(rendered, oracle_renders[i]).mean().item()
-            lpips_total += lpips_metric(rendered, oracle_renders[i]).mean().item()
+            for iteration in tqdm(range(1, args.iterations + 1), desc=f"NBV Training Iter {train_iter}"):
+                gaussians.update_learning_rate(iteration)
 
-        num_eval = len(uniform_test_cameras)
-        avg_psnr = psnr_total / num_eval
-        avg_ssim = ssim_total / num_eval
-        avg_lpips = lpips_total / num_eval
+                if iteration % 1000 == 0:
+                    gaussians.oneupSHdegree()
 
-        print(f"[Iter {train_iter}] PSNR: {avg_psnr:.2f}, SSIM: {avg_ssim:.4f}, LPIPS: {avg_lpips:.4f}")
-        log_metrics(log_path, train_iter, avg_psnr, avg_ssim, avg_lpips)
+                if not viewpoint_stack:
+                    viewpoint_stack = selected_cams.copy()
+                viewpoint_cam = viewpoint_stack.pop(randint(0, len(viewpoint_stack) - 1))
 
-        # Initialize the metrics_curve list only once
-        if not hasattr(args, "metrics_curve"):
-            args.metrics_curve = []
+                render_pkg = render(viewpoint_cam, gaussians, pipe, background)
+                image = render_pkg["render"]
+                gt_image = viewpoint_cam.original_image.cuda()
 
-        args.metrics_curve.append({
-            "iteration": train_iter,
-            "pose_lr": args.pose_lr,
-            "pose_optim_steps": args.pose_optim_steps,
-            "psnr": psnr_total / num_eval,
-            "ssim": ssim_total / num_eval,
-            "lpips": lpips_total / num_eval
-        })
-    output_dir = os.path.join("logs", "pose_opt_sweep", f"lr_{args.pose_lr}_steps_{args.pose_optim_steps}")
-    os.makedirs(output_dir, exist_ok=True)
-    with open(os.path.join(output_dir, "curve.json"), "w") as f:
-        json.dump(args.metrics_curve, f, indent=2)
+                Ll1 = l1_loss(image, gt_image)
+                loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image))
+                loss.backward()
+
+                with torch.no_grad():
+                    if iteration < opt.densify_until_iter:
+                        viewspace_point_tensor, visibility_filter, radii = (
+                            render_pkg["viewspace_points"],
+                            render_pkg["visibility_filter"],
+                            render_pkg["radii"]
+                        )
+                        gaussians.max_radii2D[visibility_filter] = torch.max(
+                            gaussians.max_radii2D[visibility_filter], radii[visibility_filter]
+                        )
+                        gaussians.add_densification_stats(viewspace_point_tensor, visibility_filter)
+
+                        if iteration > opt.densify_from_iter and iteration % opt.densification_interval == 0:
+                            size_threshold = 20 if iteration > opt.opacity_reset_interval else None
+                            gaussians.densify_and_prune(opt.densify_grad_threshold, args.min_opacity,
+                                                        scene.cameras_extent, size_threshold)
+
+                        if iteration % opt.opacity_reset_interval == 0 or (
+                                dataset.white_background and iteration == opt.densify_from_iter):
+                            gaussians.reset_opacity()
+
+                    if iteration < args.iterations:
+                        gaussians.optimizer.step()
+                        gaussians.optimizer.zero_grad(set_to_none=True)
+
+            # Evaluate using fixed train+test cameras
+            lpips_metric = lpips_func("cuda", net_type='vgg')
+            psnr_total, ssim_total, lpips_total = 0.0, 0.0, 0.0
+            test_cams = scene.getAllCameras(1.0)
+
+            for i, cam in enumerate(uniform_test_cameras):
+                rendered = render(cam, gaussians, pipe, background)["render"].clamp(0, 1)
+                psnr_total += psnr(rendered, oracle_renders[i]).mean().item()
+                ssim_total += ssim(rendered, oracle_renders[i]).mean().item()
+                lpips_total += lpips_metric(rendered, oracle_renders[i]).mean().item()
+
+            num_eval = len(uniform_test_cameras)
+            avg_psnr = psnr_total / num_eval
+            avg_ssim = ssim_total / num_eval
+            avg_lpips = lpips_total / num_eval
+
+            print(f"[Iter {train_iter}] PSNR: {avg_psnr:.2f}, SSIM: {avg_ssim:.4f}, LPIPS: {avg_lpips:.4f}")
+            log_metrics(log_path, train_iter, avg_psnr, avg_ssim, avg_lpips)
+
+            # Initialize the metrics_curve list only once
+            if not hasattr(args, "metrics_curve"):
+                args.metrics_curve = []
+
+            args.metrics_curve.append({
+                "iteration": train_iter,
+                "pose_lr": args.pose_lr,
+                "pose_optim_steps": args.pose_optim_steps,
+                "psnr": psnr_total / num_eval,
+                "ssim": ssim_total / num_eval,
+                "lpips": lpips_total / num_eval
+            })
+        output_dir = os.path.join("logs", "pose_opt_sweep", f"lr_{args.pose_lr}_steps_{args.pose_optim_steps}")
+        os.makedirs(output_dir, exist_ok=True)
+        with open(os.path.join(output_dir, "curve.json"), "w") as f:
+            json.dump(args.metrics_curve, f, indent=2)
 
 def training_report(tb_writer, iteration, Ll1, loss, l1_loss_fn, elapsed, test_iterations, scene, render_fn, render_args):
     wandb.log({
@@ -581,7 +603,7 @@ if __name__ == "__main__":
     parser.add_argument("--deepkgp", action="store_true", help="Use Deep Kernel GP for uncertainty approximation")
     parser.add_argument("--vdgp", action="store_true", help="Use Variational Deep GP for uncertainty approximation")
     parser.add_argument("--max_nbv_iterations", type=int, default=5, help="Iterations of Revolution around the object")
-    parser.add_argument("--kernel_type", type=str, default="tps", help="kernel type for deepkgp", choices=["tps", "rbf"])
+    parser.add_argument("--kernel_type", type=str, default="rbf", help="kernel type for deepkgp", choices=["tps", "rbf"])
     args = parser.parse_args()
 
     # Define sweep values
