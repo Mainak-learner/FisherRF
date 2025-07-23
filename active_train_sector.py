@@ -328,7 +328,7 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
                     candidate_cams.append(dummy)
                     candidate_images.append(render_pkg["render"])
 
-                if method=="selection":
+                if method=="fisher":
                     uncertainties = selector.compute_fisher_uncertainty(gaussians, candidate_cams, I_train_diag, pipe, background)
 
                     # Filter candidate poses that have been used before (by UV)
