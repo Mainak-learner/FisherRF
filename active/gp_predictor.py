@@ -265,7 +265,7 @@ class DeepTPSGPModel(ExactGP):
 
         if kernel_type == "tps":
             self.base_kernel = ThinPlateSplineKernelGP()
-        else:
+        elif kernel_type == "rbf":
             self.base_kernel = RBFKernel()
         else:
             raise ValueError(f"Unsupported kernel type: {kernel_type}")
