@@ -236,13 +236,17 @@ class ThinPlateSpline2DKernel(torch.nn.Module):
         x2 = x2 if x2.ndim == 2 else x2.view(-1, x2.size(-1))
 
         dists = torch.cdist(x1, x2) + self.eps  # shape (N, M)
-        R = torch.max(dists).detach()  # scalar
+        R = torch.max(dists).detach()
 
         term1 = 2 * (dists ** 2) * torch.log(dists)
         term2 = (1 + 2 * torch.log(R)) * (dists ** 2)
         term3 = R ** 2
+        K = term1 - term2 + term3
 
-        return term1 - term2 + term3
+        if x1.shape[0] == x2.shape[0] and torch.allclose(x1, x2):  # square matrix case
+            K = K + self.eps * torch.eye(K.shape[0], device=K.device)
+
+        return K
 
 class GPFeatureExtractor(nn.Module):
     def __init__(self, input_dim, output_dim):
