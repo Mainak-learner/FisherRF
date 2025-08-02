@@ -273,11 +273,15 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
 
     gaussians_fisher = deepcopy(gaussians)
     gaussians_deepkgp = deepcopy(gaussians)
+    gaussians_random = deepcopy(gaussians)
     selected_cams_fisher = deepcopy(selected_cams)
     selected_cams_deepkgp = deepcopy(selected_cams)
+    selected_cams_random = deepcopy(selected_cams)
     eval_selected_cams_fisher = deepcopy(selected_cams)
     eval_selected_cams_deepkgp = deepcopy(selected_cams)
-    for method in ["fisher", "deepkgp"]:
+    eval_selected_cams_random = deepcopy(selected_cams)
+    
+    for method in ["fisher", "deepkgp", "random"]:
         print(f"\n=== Starting sector-based training with method: {method} ===")
 
         # Assign clones based on method
@@ -289,6 +293,10 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
             gaussians = gaussians_deepkgp
             selected_cams = selected_cams_deepkgp
             eval_selected_cams = eval_selected_cams_deepkgp
+        elif method == "random":
+            gaussians = gaussians_random
+            selected_cams = selected_cams_random
+            eval_selected_cams = eval_selected_cams_random
 
         used_uvs_global = set()
 
@@ -447,6 +455,16 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
                     
                     np.save(os.path.join(sector_dir, "deepkgp_pose.npy"), center_opt.cpu().numpy())
                     TF.to_pil_image(deepkgp_rendered_img.clamp(0, 1).cpu()).save(os.path.join(sector_dir, "deepkgp_image.png"))
+                
+                elif method == "random":
+                    u_random = np.random.uniform(u_bounds[0], u_bounds[1])
+                    v_random = np.random.uniform(v_bounds[0], v_bounds[1])
+                    center_random = uv2car_torch(
+                        torch.tensor([u_random], device="cuda"),
+                        torch.tensor([v_random], device="cuda")
+                    ).squeeze(0) * sample_radius
+                    oracle_img = render_with_oracle(center_random, object_center, pipe, oracle_gaussians, background, reference_camera)
+                    final_cam = DummyCamera(*look_at(center_random.detach(), object_center.detach()), reference_camera, image=oracle_img.detach())
 
                 sector_selections.append(final_cam)
                 img_path = f"oracle_gt_visualization/pose_{len(eval_selected_cams) + len(sector_selections)}.png"
