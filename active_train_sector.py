@@ -274,14 +274,17 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
     gaussians_fisher = deepcopy(gaussians)
     gaussians_deepkgp = deepcopy(gaussians)
     gaussians_random = deepcopy(gaussians)
+    gaussians_middle = deepcopy(gaussians)
     selected_cams_fisher = deepcopy(selected_cams)
     selected_cams_deepkgp = deepcopy(selected_cams)
     selected_cams_random = deepcopy(selected_cams)
+    selected_cams_middle = deepcopy(selected_cams)
     eval_selected_cams_fisher = deepcopy(selected_cams)
     eval_selected_cams_deepkgp = deepcopy(selected_cams)
     eval_selected_cams_random = deepcopy(selected_cams)
+    eval_selected_cams_middle = deepcopy(selected_cams)
     
-    for method in ["fisher", "deepkgp", "random"]:
+    for method in ["fisher", "deepkgp", "random", "middle"]:
         print(f"\n=== Starting sector-based training with method: {method} ===")
 
         # Assign clones based on method
@@ -297,6 +300,10 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
             gaussians = gaussians_random
             selected_cams = selected_cams_random
             eval_selected_cams = eval_selected_cams_random
+        elif method == "middle":
+            gaussians = gaussians_middle
+            selected_cams = selected_cams_middle
+            eval_selected_cams = eval_selected_cams_middle
 
         used_uvs_global = set()
 
@@ -465,6 +472,16 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
                     ).squeeze(0) * sample_radius
                     oracle_img = render_with_oracle(center_random, object_center, pipe, oracle_gaussians, background, reference_camera)
                     final_cam = DummyCamera(*look_at(center_random.detach(), object_center.detach()), reference_camera, image=oracle_img.detach())
+                
+                elif method == "middle":
+                    u_middle = (u_bounds[0] + u_bounds[1]) // 2
+                    v_middle = (v_bounds[0] + v_bounds[1]) // 2
+                    center_middle = uv2car_torch(
+                        torch.tensor([u_middle], device="cuda"),
+                        torch.tensor([v_middle], device="cuda")
+                    ).squeeze(0) * sample_radius
+                    oracle_img = render_with_oracle(center_middle, object_center, pipe, oracle_gaussians, background, reference_camera)
+                    final_cam = DummyCamera(*look_at(center_middle.detach(), object_center.detach()), reference_camera, image=oracle_img.detach())
 
                 sector_selections.append(final_cam)
                 img_path = f"oracle_gt_visualization/pose_{len(eval_selected_cams) + len(sector_selections)}.png"
