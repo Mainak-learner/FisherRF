@@ -474,8 +474,8 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
                     final_cam = DummyCamera(*look_at(center_random.detach(), object_center.detach()), reference_camera, image=oracle_img.detach())
                 
                 elif method == "middle":
-                    u_middle = (u_bounds[0] + u_bounds[1]) // 2
-                    v_middle = (v_bounds[0] + v_bounds[1]) // 2
+                    u_middle = (u_bounds[0] + u_bounds[1]) / 2
+                    v_middle = (v_bounds[0] + v_bounds[1]) / 2
                     center_middle = uv2car_torch(
                         torch.tensor([u_middle], device="cuda"),
                         torch.tensor([v_middle], device="cuda")
