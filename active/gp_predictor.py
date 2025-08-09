@@ -321,7 +321,7 @@ class GPFisherNBVSelector(Module):
     #     score_tensor = torch.stack(distances)
     #     return torch.logsumexp(score_tensor, dim=0) - np.log(len(distances))
 
-    def sample_view_manifold(num_samples, u_bounds, v_bounds, radius):
+    def sample_view_manifold(self, num_samples, u_bounds, v_bounds, radius):
         """
         Uniformly sample points on the hemisphere in UV space.
         """
