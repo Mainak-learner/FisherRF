@@ -305,21 +305,42 @@ class GPFisherNBVSelector(Module):
         name2idx = {"xyz": 0, "rgb": 1, "sh": 2, "scale": 3, "rotation": 4, "opacity": 5}
         self.filter_out_idx: List[str] = [name2idx[k] for k in args.filter_out_grad]
 
-    def compute_pose_overlap_score(self, new_center, acquired_cameras, sim_tau=0.5):
-        """
-        Differentiable overlap score encouraging NBV proposals to share view overlap with past views.
-        """
-        if not acquired_cameras:
-            return torch.tensor(0.0, device=new_center.device)
+    # def compute_pose_overlap_score(self, new_center, acquired_cameras, sim_tau=0.5):
+    #     """
+    #     Differentiable overlap score encouraging NBV proposals to share view overlap with past views.
+    #     """
+    #     if not acquired_cameras:
+    #         return torch.tensor(0.0, device=new_center.device)
 
-        distances = []
-        for cam in acquired_cameras:
-            center_q = cam.camera_center.detach()
-            dist = torch.norm(new_center - center_q, p=2)
-            distances.append(torch.exp(-dist / sim_tau))
+    #     distances = []
+    #     for cam in acquired_cameras:
+    #         center_q = cam.camera_center.detach()
+    #         dist = torch.norm(new_center - center_q, p=2)
+    #         distances.append(torch.exp(-dist / sim_tau))
 
-        score_tensor = torch.stack(distances)
-        return torch.logsumexp(score_tensor, dim=0) - np.log(len(distances))
+    #     score_tensor = torch.stack(distances)
+    #     return torch.logsumexp(score_tensor, dim=0) - np.log(len(distances))
+
+    def sample_view_manifold(num_samples, u_bounds, v_bounds, radius):
+        """
+        Uniformly sample points on the hemisphere in UV space.
+        """
+        u_min, u_max = u_bounds
+        v_min, v_max = v_bounds
+
+        us = torch.empty(num_samples).uniform_(u_min, u_max)
+        vs = torch.empty(num_samples).uniform_(v_min, v_max)
+        
+        cam_centers = uv2car_torch(us, vs) * radius  # shape (num_samples, 3)
+        return cam_centers
+    
+    def estimate_variance_statistics(model, cam_centers):
+        with torch.no_grad(), gpytorch.settings.fast_pred_var():
+            preds = model(cam_centers)
+            variances = preds.variance.sqrt()  # (num_samples,)
+            sigma_mean = variances.mean().item()
+            sigma_max = variances.max().item()
+        return sigma_mean, sigma_max
 
     def train_dkl_gp(self, X_train, y_train, steps=200):
         X_train = X_train.to(self.device)
@@ -374,20 +395,20 @@ class GPFisherNBVSelector(Module):
 
         return acq_scores
     
-    def reparameterized_acquisition(self, mu, sigma, num_samples=10, beta=1.0):
+    def reparameterized_acquisition(self, mu, sigma, num_samples, beta=1.0):
         """
         Reparameterized sampling of acquisition values.
         """
-        eps = torch.randn((num_samples,) + mu.shape, device=mu.device)  # (S, B)
-        samples = mu.unsqueeze(0) + sigma.unsqueeze(0) * eps            # (S, B)
+        # eps = torch.randn((num_samples,) + mu.shape, device=mu.device)  # (S, B)
+        # samples = mu.unsqueeze(0) + sigma.unsqueeze(0) * eps            # (S, B)
 
-        # Option 1: UCB-like sampling (stochastic upper confidence bound)
-        # sampled_acq = samples + beta * sigma.unsqueeze(0)               # shape (S, B)
+        # Option 1: UCB (upper confidence bound)
+        sampled_acq = mu + beta * sigma               # shape (S)
 
         # Option 2: just use sampled value directly
-        sampled_acq = samples
+        # sampled_acq = samples
 
-        return sampled_acq.mean(dim=0)
+        return sampled_acq
 
     def optimize_gp_posterior_dkl(
         self,
@@ -452,6 +473,10 @@ class GPFisherNBVSelector(Module):
         with torch.no_grad():
             ref_feats = F.normalize(image_encoder(ref_imgs), dim=1)  # (B, D)
 
+        cam_centers = self.sample_view_manifold(256, uv_bounds[0], uv_bounds[1], radius)
+        sigma_mean, sigma_max = self.estimate_variance_statistics(self.model, cam_centers)
+        beta = 1.5 * (sigma_max / sigma_mean)
+
         for _ in range(steps):
             uv_optimizer.zero_grad()
 
@@ -462,11 +487,8 @@ class GPFisherNBVSelector(Module):
                 mu = pred.mean
                 sigma = pred.variance.sqrt()
 
-            # Overlap score based on pose proximity
-            overlap_score = self.compute_pose_overlap_score(cam_center.squeeze(0), selected_cameras)
-
             # Weighted acquisition function
-            acq = self.reparameterized_acquisition(mu, sigma, num_samples=1, beta=1.0)
+            acq = self.reparameterized_acquisition(mu, sigma, 1, beta)
             loss = -acq.sum()  # maximize acquisition => minimize negative
             loss.backward()
 
