@@ -334,7 +334,7 @@ class GPFisherNBVSelector(Module):
         cam_centers = uv2car_torch(us, vs) * radius  # shape (num_samples, 3)
         return cam_centers
     
-    def estimate_variance_statistics(model, cam_centers):
+    def estimate_variance_statistics(self, model, cam_centers):
         with torch.no_grad(), gpytorch.settings.fast_pred_var():
             preds = model(cam_centers)
             variances = preds.variance.sqrt()  # (num_samples,)
