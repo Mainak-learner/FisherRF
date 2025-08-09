@@ -15,7 +15,7 @@ from utils.image_utils import psnr
 from lpipsPyTorch import lpips_func
 from active.lpips_selector import LPIPSNBVSelector
 from active.encoders import ImageEncoder, PoseToImageEncoder
-from scene.sector_pose_gen import generate_circular_hemisphere_poses, divide_hemisphere_poses
+from scene.sector_pose_gen import generate_circular_hemisphere_poses, divide_hemisphere_poses, sample_uniform_sphere_views_disjoint
 from utils.camera_utils import look_at, look_at_torch
 from utils.graphics_utils import uv2car_torch
 from scene.cameras import DummyCamera
@@ -33,7 +33,6 @@ import torch.backends.cudnn as cudnn
 import random
 import torch.nn.functional as F
 import pandas as pd
-from scene.sector_pose_gen import sample_uniform_sphere_views  # wherever you placed it
 from copy import deepcopy
 
 os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
@@ -129,6 +128,7 @@ def compute_fisher_hessian(gaussians, cameras, pipe, background, filter_out_idx,
 
 def training(dataset, opt, pipe, test_iterations, save_iterations, args):
     prepare_output_and_logger(dataset)
+    set_global_seed(args.seed)
     log_path = init_metric_logger(args.model_path)
     gaussians = GaussianModel(dataset.sh_degree)
     scene = Scene(dataset, gaussians)
@@ -152,10 +152,18 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
     #     cam_center = all_centers[idx]
     #     gt_img = render_with_oracle(cam_center, object_center, pipe, oracle_gaussians, torch.tensor([1.0, 1.0, 1.0], device="cuda"), reference_camera)
     #     img_path = f"oracle_gt_visualization/proposal_pose_{idx}.png"
-    #     TF.to_pil_image(gt_img.cpu()).save(img_path)
-    set_global_seed(args.seed)
+    #     TF.to_pil_image(gt_img.cpu()).save(img_path) 
     background = torch.tensor([1.0, 1.0, 1.0], dtype=torch.float32, device="cuda")
-    uniform_centers, directions = sample_uniform_sphere_views(num_views=400, radius=sample_radius, object_center=object_center)
+    
+    # Sample test views with explicit disjointness from proposals
+    uniform_centers, directions = sample_uniform_sphere_views_disjoint(
+        num_views=400,
+        radius=sample_radius,
+        object_center=object_center,
+        exclude_centers=all_centers,   # make tests disjoint from proposals
+        angle_deg=1.0,                 # tune as you like (1–3 degrees is common)
+        oversample_factor=2
+    )
 
     uniform_test_cameras = []
     for center, direction in zip(uniform_centers, directions):

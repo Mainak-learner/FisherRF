@@ -2,26 +2,73 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
-def sample_uniform_sphere_views(num_views=400, radius=1.0, object_center=torch.tensor([0.0, 0.0, 0.0])):
+@torch.no_grad()
+def _filter_overlap_by_angle(test_centers, exclude_centers, angle_deg=1.0, eps=1e-8):
     """
-    Generate uniformly distributed camera centers and directions on a sphere.
+    Remove test centers that are within `angle_deg` of any center in `exclude_centers`.
+    Works even if radii differ (we normalize to unit vectors).
+    """
+    if exclude_centers is None or len(exclude_centers) == 0:
+        return test_centers, torch.ones(len(test_centers), dtype=torch.bool, device=test_centers.device)
 
-    Returns:
-        - centers: (N, 3) tensor of camera centers
-        - directions: (N, 3) tensor of normalized viewing directions (toward object_center)
+    # Normalize to unit vectors
+    t = test_centers / (test_centers.norm(dim=1, keepdim=True) + eps)          # (Nt, 3)
+    p = exclude_centers / (exclude_centers.norm(dim=1, keepdim=True) + eps)    # (Ne, 3)
+
+    # Cosine threshold
+    thr = torch.cos(torch.tensor(angle_deg * np.pi / 180.0, device=t.device))
+
+    # Cosine similarity matrix (Nt, Ne)
+    cos_sim = t @ p.T
+    max_sim, _ = cos_sim.max(dim=1)
+
+    keep_mask = max_sim <= thr
+    return test_centers[keep_mask], keep_mask
+
+
+def sample_uniform_sphere_views_disjoint(
+    num_views=400,
+    radius=1.0,
+    object_center=torch.tensor([0.0, 0.0, 0.0]),
+    exclude_centers=None,          # torch.Tensor of shape (Ne, 3), e.g. your proposal centers
+    angle_deg=1.0,                 # min angular separation from excluded poses
+    oversample_factor=2,           # generate more then filter to hit target count
+):
     """
-    indices = np.arange(0, num_views, dtype=np.float32) + 0.5
-    phi = np.arccos(1 - 2 * indices / num_views)
+    Uniform Fibonacci sampling on a sphere, then drop any pose within `angle_deg`
+    of any excluded pose (e.g., proposal poses). Returns exactly `num_views`
+    if possible; otherwise returns as many as remain after filtering.
+    """
+    device = object_center.device
+    N = int(num_views * oversample_factor)
+
+    # Fibonacci sphere sampling
+    indices = np.arange(0, N, dtype=np.float32) + 0.5
+    phi = np.arccos(1 - 2 * indices / N)
     theta = np.pi * (1 + 5**0.5) * indices
 
     x = radius * np.sin(phi) * np.cos(theta)
     y = radius * np.sin(phi) * np.sin(theta)
     z = radius * np.cos(phi)
 
-    centers = torch.tensor(np.stack([x, y, z], axis=1), dtype=torch.float32, device=object_center.device)
-    directions = F.normalize(object_center[None, :] - centers, dim=1)
+    centers_all = torch.tensor(np.stack([x, y, z], axis=1), dtype=torch.float32, device=device)
+    directions_all = F.normalize(object_center[None, :] - centers_all, dim=1)
 
-    return centers, directions
+    # Filter out overlaps with excluded centers
+    if exclude_centers is not None and len(exclude_centers) > 0:
+        centers_filt, keep_mask = _filter_overlap_by_angle(centers_all, exclude_centers, angle_deg=angle_deg)
+        directions_filt = directions_all[keep_mask]
+    else:
+        centers_filt, directions_filt = centers_all, directions_all
+
+    # If we still have more than needed, downselect uniformly
+    if len(centers_filt) > num_views:
+        # Pick a uniform subset (could also do farthest-point sampling if you prefer)
+        idx = torch.linspace(0, len(centers_filt) - 1, steps=num_views, device=device).round().long()
+        centers_filt = centers_filt[idx]
+        directions_filt = directions_filt[idx]
+
+    return centers_filt, directions_filt
 
 
 def generate_circular_hemisphere_poses(center, num_circles=9, min_poses=30, radius=1.5):
