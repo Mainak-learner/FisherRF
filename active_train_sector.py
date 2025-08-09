@@ -292,7 +292,7 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
     eval_selected_cams_random = deepcopy(selected_cams)
     eval_selected_cams_middle = deepcopy(selected_cams)
     
-    for method in ["fisher", "deepkgp", "random"]:
+    for method in ["fisher", "deepkgp", "random", "middle"]:
         print(f"\n=== Starting sector-based training with method: {method} ===")
 
         # Assign clones based on method
@@ -646,7 +646,7 @@ if __name__ == "__main__":
     parser.add_argument("--nbv_process", type=str, default="optimization", help="Process of reaching NBV", choices=["optimization", "selection"])
     parser.add_argument("--deepkgp", action="store_true", help="Use Deep Kernel GP for uncertainty approximation")
     parser.add_argument("--vdgp", action="store_true", help="Use Variational Deep GP for uncertainty approximation")
-    parser.add_argument("--max_nbv_iterations", type=int, default=5, help="Iterations of Revolution around the object")
+    parser.add_argument("--max_nbv_iterations", type=int, default=1, help="Iterations of Revolution around the object")
     parser.add_argument("--kernel_type", type=str, default="rbf", help="kernel type for deepkgp", choices=["tps", "rbf"])
     args = parser.parse_args()
 
