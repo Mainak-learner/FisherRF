@@ -321,25 +321,32 @@ class GPFisherNBVSelector(Module):
     #     score_tensor = torch.stack(distances)
     #     return torch.logsumexp(score_tensor, dim=0) - np.log(len(distances))
 
-    def sample_view_manifold(self, num_samples, u_bounds, v_bounds, radius):
-        """
-        Uniformly sample points on the hemisphere in UV space.
-        """
+    # inside GPFisherNBVSelector
+    @torch.no_grad()
+    def sample_view_manifold(self, num_samples, u_bounds, v_bounds, radius, device=None):
+        if device is None:
+            device = self.device
         u_min, u_max = u_bounds
         v_min, v_max = v_bounds
+        us = torch.empty(num_samples, device=device).uniform_(u_min, u_max)
+        vs = torch.empty(num_samples, device=device).uniform_(v_min, v_max)
+        centers = uv2car_torch(us, vs) * radius  # (num_samples, 3) on `device`
+        return centers
 
-        us = torch.empty(num_samples).uniform_(u_min, u_max)
-        vs = torch.empty(num_samples).uniform_(v_min, v_max)
-        
-        cam_centers = uv2car_torch(us, vs) * radius  # shape (num_samples, 3)
-        return cam_centers
     
+    @torch.no_grad()
     def estimate_variance_statistics(self, model, cam_centers):
-        with torch.no_grad(), gpytorch.settings.fast_pred_var():
+        # Use the same device as the model’s training inputs
+        model_device = model.train_inputs[0].device
+        cam_centers = cam_centers.to(model_device).float()
+
+        model.eval(); self.likelihood.eval()
+        with gpytorch.settings.fast_pred_var():
             preds = model(cam_centers)
-            variances = preds.variance.sqrt()  # (num_samples,)
-            sigma_mean = variances.mean().item()
-            sigma_max = variances.max().item()
+            sigma = preds.variance.sqrt()
+
+        sigma_mean = sigma.mean().item()
+        sigma_max  = sigma.max().item()
         return sigma_mean, sigma_max
 
     def train_dkl_gp(self, X_train, y_train, steps=200):
@@ -473,9 +480,10 @@ class GPFisherNBVSelector(Module):
         with torch.no_grad():
             ref_feats = F.normalize(image_encoder(ref_imgs), dim=1)  # (B, D)
 
-        cam_centers = self.sample_view_manifold(256, uv_bounds[0], uv_bounds[1], radius)
+        cam_centers = self.sample_view_manifold(256, uv_bounds[0], uv_bounds[1], radius, device=self.device)
+        cam_centers = cam_centers.to(self.model.train_inputs[0].device)
         sigma_mean, sigma_max = self.estimate_variance_statistics(self.model, cam_centers)
-        beta = 1.5 * (sigma_max / sigma_mean)
+        beta = 1.5 * (sigma_max / max(sigma_mean, 1e-8))  # example adaptive beta
 
         for _ in range(steps):
             uv_optimizer.zero_grad()
