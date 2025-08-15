@@ -260,7 +260,7 @@ def training_report(tb_writer, iteration, Ll1, loss, l1_loss, elapsed, testing_i
                     gt_image = torch.clamp(viewpoint.original_image.to("cuda"), 0.0, 1.0)
                     if tb_writer and ((idx < 5) or log_every_image):
                         tb_writer.add_images(config['name'] + "_view_{}/render".format(idx), image[None], global_step=iteration)
-                        log_images[f"render/{idx:03d}"] = wandb.Image(image[None])
+                        log_images[f"render/{idx:03d}"] = wandb.Image(image[0])
                         if iteration == testing_iterations[0]:
                             tb_writer.add_images(config['name'] + "_view_{}/ground_truth".format(idx), gt_image[None], global_step=iteration)
                             log_images[f"gt/{idx:03d}"] = wandb.Image(gt_image.cpu()[None])
