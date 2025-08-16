@@ -349,7 +349,8 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
                 v_vals = np.linspace(v_bounds[0], v_bounds[1], grid_res)
 
                 dense_uvs = np.array([(u, v) for u in u_vals for v in v_vals])
-                dense_centers = [uv2car_torch(uv[0], uv[1]) * sample_radius for uv in dense_uvs]
+                dense_centers = [uv2car_torch(torch.tensor([uv[0]], device="cuda"),
+                        torch.tensor([uv[1]], device="cuda")) * sample_radius for uv in dense_uvs]
 
                 candidate_cams, candidate_images = [], []
                 for cam_center in proposal_centers:
