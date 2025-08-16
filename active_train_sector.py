@@ -342,6 +342,15 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
                 u_bounds = (min(u_vals), max(u_vals))
                 v_bounds = (min(v_vals), max(v_vals))
 
+                # Grid resolution per sector (e.g., 20x20 = 400 samples)
+                grid_res = 20  
+
+                u_vals = np.linspace(u_bounds[0], u_bounds[1], grid_res)
+                v_vals = np.linspace(v_bounds[0], v_bounds[1], grid_res)
+
+                dense_uvs = np.array([(u, v) for u in u_vals for v in v_vals])
+                dense_centers = [uv2car_torch(uv[0], uv[1]) * sample_radius for uv in dense_uvs]
+
                 candidate_cams, candidate_images = [], []
                 for cam_center in proposal_centers:
                     dummy = DummyCamera(*look_at(cam_center.detach(), object_center.detach()), reference_camera)
@@ -351,6 +360,16 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
                     candidate_cams.append(dummy)
                     candidate_images.append(render_pkg["render"])
 
+                dense_cams = []
+                for cam_center in dense_centers:
+                    dummy = DummyCamera(*look_at(cam_center.detach(), object_center.detach()), reference_camera)
+                    rgb = render_with_oracle(cam_center, object_center, pipe, oracle_gaussians, background, reference_camera)
+                    dummy.original_image = rgb.detach().clamp(0, 1).cuda()
+                    render_pkg = render(dummy, gaussians, pipe, background)
+                    dense_cams.append(dummy)
+
+                fisher_vals_ablation = selector.compute_fisher_uncertainty(gaussians, dense_cams, I_train_diag, pipe, background)
+                
                 if method=="fisher":
                     uncertainties = selector.compute_fisher_uncertainty(gaussians, candidate_cams, I_train_diag, pipe, background)
 
@@ -442,10 +461,12 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
                     # TF.to_pil_image(fisherrf_rendered.cpu()).save(os.path.join(sector_dir, "fisherrf_image.png"))
                     image_encoder = ImageEncoder(output_dim=128).to("cuda")
 
-                    center_opt, uv_opt = selector.optimize_gp_posterior_dkl(
+                    center_opt, uv_opt, dense_uvs, acq_dense = selector.optimize_gp_posterior_dkl(
                         proposal_uvs=[all_uvs[i] for i in sector_indices],
                         proposal_centers=[all_centers[i].cpu().numpy() for i in sector_indices],
                         uncertainties=uncertainties,
+                        dense_centers = dense_centers,
+                        dense_uvs = dense_uvs,
                         init_uv=init_pose,
                         uv_bounds=(u_bounds, v_bounds),
                         radius=sample_radius,
@@ -470,6 +491,9 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
                     
                     np.save(os.path.join(sector_dir, "deepkgp_pose.npy"), center_opt.cpu().numpy())
                     TF.to_pil_image(deepkgp_rendered_img.clamp(0, 1).cpu()).save(os.path.join(sector_dir, "deepkgp_image.png"))
+
+                    np.savez(f"sector_{sector_id}_iter{train_iter}_acqmap.npz",
+                            uvs=dense_uvs, acquisition=acq_dense)
                 
                 elif method == "random":
                     u_random = np.random.uniform(u_bounds[0], u_bounds[1])

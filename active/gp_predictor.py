@@ -422,6 +422,8 @@ class GPFisherNBVSelector(Module):
         proposal_uvs,
         proposal_centers,
         uncertainties,
+        dense_centers,
+        dense_uvs,
         init_uv,
         uv_bounds,
         radius,
@@ -485,6 +487,13 @@ class GPFisherNBVSelector(Module):
         sigma_mean, sigma_max = self.estimate_variance_statistics(self.model, cam_centers)
         beta = 1.5 * (sigma_max / max(sigma_mean, 1e-8))  # example adaptive beta
 
+        with torch.no_grad(), gpytorch.settings.fast_pred_var():
+            pred_dense = self.model(dense_centers)
+            mu_dense = pred_dense.mean        # (N,)
+            sigma_dense = pred_dense.variance.sqrt()  # (N,)
+            acq_dense = self.reparameterized_acquisition(mu_dense, sigma_dense, num_samples=1, beta=beta)
+
+
         for _ in range(steps):
             uv_optimizer.zero_grad()
 
@@ -507,4 +516,4 @@ class GPFisherNBVSelector(Module):
 
         final_uv = (u.item(), v.item())
         final_center = uv2car_torch(u.detach(), v.detach()).squeeze(0) * radius
-        return final_center, final_uv
+        return final_center, final_uv, dense_uvs.cpu().numpy(), acq_dense.cpu().numpy()
