@@ -292,7 +292,7 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
     eval_selected_cams_random = deepcopy(selected_cams)
     eval_selected_cams_middle = deepcopy(selected_cams)
     
-    for method in ["fisher", "deepkgp", "random", "middle"]:
+    for method in ["deepkgp"]:
         print(f"\n=== Starting sector-based training with method: {method} ===")
 
         # Assign clones based on method
@@ -494,7 +494,7 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
                     TF.to_pil_image(deepkgp_rendered_img.clamp(0, 1).cpu()).save(os.path.join(sector_dir, "deepkgp_image.png"))
 
                     np.savez(f"{args.model_path}/sector_{sector_id}_iter{train_iter}_acqmap.npz",
-                            uvs=dense_uvs, acquisition=acq_dense)
+                            uvs=dense_uvs, fisher_vals= fisher_vals_ablation, acquisition=acq_dense)
                 
                 elif method == "random":
                     u_random = np.random.uniform(u_bounds[0], u_bounds[1])

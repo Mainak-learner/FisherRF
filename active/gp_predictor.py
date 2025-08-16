@@ -487,11 +487,17 @@ class GPFisherNBVSelector(Module):
         sigma_mean, sigma_max = self.estimate_variance_statistics(self.model, cam_centers)
         beta = 1.5 * (sigma_max / max(sigma_mean, 1e-8))  # example adaptive beta
 
+        acq_dense = []
         with torch.no_grad(), gpytorch.settings.fast_pred_var():
-            pred_dense = self.model(dense_centers)
-            mu_dense = pred_dense.mean        # (N,)
-            sigma_dense = pred_dense.variance.sqrt()  # (N,)
-            acq_dense = self.reparameterized_acquisition(mu_dense, sigma_dense, num_samples=1, beta=beta)
+            for i in range(dense_centers.shape[0]):
+                cam_center = dense_centers[i].unsqueeze(0)  # (1, 3)
+                pred = self.model(cam_center)
+                mu = pred.mean
+                sigma = pred.variance.sqrt()
+                acq = self.reparameterized_acquisition(mu, sigma, num_samples=1, beta=beta)
+                acq_dense.append(acq.item())
+
+        acq_dense = np.array(acq_dense)
 
 
         for _ in range(steps):
