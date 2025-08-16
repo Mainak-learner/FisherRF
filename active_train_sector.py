@@ -492,7 +492,7 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
                     np.save(os.path.join(sector_dir, "deepkgp_pose.npy"), center_opt.cpu().numpy())
                     TF.to_pil_image(deepkgp_rendered_img.clamp(0, 1).cpu()).save(os.path.join(sector_dir, "deepkgp_image.png"))
 
-                    np.savez(f"sector_{sector_id}_iter{train_iter}_acqmap.npz",
+                    np.savez(f"{args.model_path}/sector_{sector_id}_iter{train_iter}_acqmap.npz",
                             uvs=dense_uvs, acquisition=acq_dense)
                 
                 elif method == "random":
