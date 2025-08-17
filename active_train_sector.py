@@ -493,8 +493,15 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
                     np.save(os.path.join(sector_dir, "deepkgp_pose.npy"), center_opt.cpu().numpy())
                     TF.to_pil_image(deepkgp_rendered_img.clamp(0, 1).cpu()).save(os.path.join(sector_dir, "deepkgp_image.png"))
 
+                    def to_numpy(x):
+                        if isinstance(x, torch.Tensor):
+                            return x.detach().cpu().numpy()
+                        return np.array(x)
+
                     np.savez(f"{args.model_path}/sector_{sector_id}_iter{train_iter}_acqmap.npz",
-                            uvs=dense_uvs, fisher_vals= fisher_vals_ablation, acquisition=acq_dense)
+                                uvs=dense_uvs,
+                                fisher_vals=to_numpy(fisher_vals_ablation),
+                                acquisition=acq_dense)
                 
                 elif method == "random":
                     u_random = np.random.uniform(u_bounds[0], u_bounds[1])
