@@ -492,7 +492,7 @@ class GPFisherNBVSelector(Module):
         acq_dense = []
         with torch.no_grad(), gpytorch.settings.fast_pred_var():
             for i in range(dense_centers.shape[0]):
-                cam_center = dense_centers[i].unsqueeze(0)  # (1, 3)
+                cam_center = dense_centers[i].unsqueeze(0).to(dtype=torch.float32)                
                 pred = self.model(cam_center)
                 mu = pred.mean
                 sigma = pred.variance.sqrt()
