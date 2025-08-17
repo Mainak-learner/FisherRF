@@ -524,4 +524,4 @@ class GPFisherNBVSelector(Module):
 
         final_uv = (u.item(), v.item())
         final_center = uv2car_torch(u.detach(), v.detach()).squeeze(0) * radius
-        return final_center, final_uv, dense_uvs, acq_dense.cpu().numpy()
+        return final_center, final_uv, dense_uvs, acq_dense
