@@ -97,7 +97,7 @@ class GPFisherNBVSelector(Module):
         #Deep GP:
         if args.deepkgp:
             out_dim = 2 if self.kernel_type == "tps" else 64
-            if args.gp_ablation:
+            if args.exclude_deep_kernel:
                 self.feature_extractor = torch.nn.Identity()
             else:
                 self.feature_extractor = GPFeatureExtractor(input_dim=3, output_dim=out_dim).to(self.device)
