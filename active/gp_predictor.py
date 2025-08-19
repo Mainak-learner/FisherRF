@@ -109,6 +109,10 @@ class VDGPFisherNBVSelector(Module):
             pred_img = render_pkg["render"]
             pred_img.backward(gradient=torch.ones_like(pred_img))
 
+            # Free GPU memory:
+            del render_pkg
+            torch.cuda.empty_cache()
+
             cur_H = torch.cat([p.grad.detach().reshape(-1) for p in params])
 
             H_train += cur_H
@@ -125,6 +129,10 @@ class VDGPFisherNBVSelector(Module):
             render_pkg = modified_render(cam, gaussians, pipe, background)
             pred_img = render_pkg["render"]
             pred_img.backward(gradient=torch.ones_like(pred_img))
+
+            # Free GPU memory:
+            del render_pkg
+            torch.cuda.empty_cache()
 
             cur_H = torch.cat([p.grad.detach().reshape(-1) for p in params])
 
