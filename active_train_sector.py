@@ -292,7 +292,7 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
     eval_selected_cams_random = deepcopy(selected_cams)
     eval_selected_cams_middle = deepcopy(selected_cams)
     
-    for method in ["fisher", "deepkgp", "random", "middle"]:
+    for method in ["deepkgp", "fisher", "random", "middle"]:
         print(f"\n=== Starting sector-based training with method: {method} ===")
 
         # Assign clones based on method
