@@ -253,7 +253,7 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
                 gaussians.optimizer.step()
                 gaussians.optimizer.zero_grad(set_to_none = True)
     
-    lpips_metric = lpips_func("cuda", net_type='vgg')
+    lpips_metric = lpips_func("cuda", net_type='vgg').half
     psnr_total, ssim_total, lpips_total = 0.0, 0.0, 0.0
     test_cams = scene.getAllCameras(1.0)
 
@@ -262,7 +262,10 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
             rendered = render(cam, gaussians, pipe, background)["render"].clamp(0, 1)
         psnr_total += psnr(rendered, oracle_renders[i]).mean().item()
         ssim_total += ssim(rendered, oracle_renders[i]).mean().item()
-        lpips_total += lpips_metric(rendered, oracle_renders[i]).mean().item()
+        with torch.no_grad():
+            lpips_val = lpips_metric(rendered, oracle_renders[i]).mean().item()
+        lpips_total += lpips_val
+        torch.cuda.empty_cache()
 
     num_eval = len(uniform_test_cameras)
     avg_psnr = psnr_total / num_eval
