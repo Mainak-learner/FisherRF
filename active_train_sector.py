@@ -24,7 +24,8 @@ import base64
 import json
 from PIL import Image
 from active.mc_dkl_selector import MCDKLNBVSelector
-from active.gp_predictor import GPFisherNBVSelector, VDGPFisherNBVSelector
+from active.gp_predictor import GPFisherNBVSelector 
+from active.gp_predictor_vdgp import VDGPFisherNBVSelector
 from gaussian_renderer import render, network_gui, modified_render
 import torchvision.transforms.functional as TF
 from arguments import ModelParams, PipelineParams, OptimizationParams
