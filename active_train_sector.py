@@ -279,39 +279,41 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
     else:
         selector = GPFisherNBVSelector(args, device="cuda")
 
-    gaussians_fisher = deepcopy(gaussians)
-    gaussians_deepkgp = deepcopy(gaussians)
-    gaussians_random = deepcopy(gaussians)
-    gaussians_middle = deepcopy(gaussians)
-    selected_cams_fisher = deepcopy(selected_cams)
-    selected_cams_deepkgp = deepcopy(selected_cams)
-    selected_cams_random = deepcopy(selected_cams)
-    selected_cams_middle = deepcopy(selected_cams)
-    eval_selected_cams_fisher = deepcopy(selected_cams)
-    eval_selected_cams_deepkgp = deepcopy(selected_cams)
-    eval_selected_cams_random = deepcopy(selected_cams)
-    eval_selected_cams_middle = deepcopy(selected_cams)
-    
-    for method in ["deepkgp"]:
-        print(f"\n=== Starting sector-based training with method: {method} ===")
+    gaussians_dict = {
+        "rbf": deepcopy(gaussians),
+        "matern": deepcopy(gaussians),
+        "rq": deepcopy(gaussians),
+        "linear": deepcopy(gaussians),
+        "periodic": deepcopy(gaussians),
+        "spectral": deepcopy(gaussians),
+    }
 
-        # Assign clones based on method
-        if method == "fisher":
-            gaussians = gaussians_fisher
-            selected_cams = selected_cams_fisher
-            eval_selected_cams = eval_selected_cams_fisher
-        elif method == "deepkgp":
-            gaussians = gaussians_deepkgp
-            selected_cams = selected_cams_deepkgp
-            eval_selected_cams = eval_selected_cams_deepkgp
-        elif method == "random":
-            gaussians = gaussians_random
-            selected_cams = selected_cams_random
-            eval_selected_cams = eval_selected_cams_random
-        elif method == "middle":
-            gaussians = gaussians_middle
-            selected_cams = selected_cams_middle
-            eval_selected_cams = eval_selected_cams_middle
+    selected_cams_dict = {
+        "rbf": deepcopy(selected_cams),
+        "matern": deepcopy(selected_cams),
+        "rq": deepcopy(selected_cams),
+        "linear": deepcopy(selected_cams),
+        "periodic": deepcopy(selected_cams),
+        "spectral": deepcopy(selected_cams),
+    }
+
+    eval_selected_cams_dict = {
+        "rbf": deepcopy(selected_cams),
+        "matern": deepcopy(selected_cams),
+        "rq": deepcopy(selected_cams),
+        "linear": deepcopy(selected_cams),
+        "periodic": deepcopy(selected_cams),
+        "spectral": deepcopy(selected_cams),
+    }
+
+    # Kernel ablation loop
+    for kernel in ["rbf", "matern", "rq", "linear", "periodic", "spectral"]:
+        print(f"\n=== Starting sector-based training with kernel: {kernel} ===")
+
+        gaussians = gaussians_dict[kernel]
+        selected_cams = selected_cams_dict[kernel]
+        eval_selected_cams = eval_selected_cams_dict[kernel]
+
 
         used_uvs_global = set()
 
@@ -371,7 +373,7 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
 
                 fisher_vals_ablation = selector.compute_fisher_uncertainty(gaussians, dense_cams, I_train_diag, pipe, background)
                 
-                if method=="fisher":
+                if not args.deepkgp:
                     uncertainties = selector.compute_fisher_uncertainty(gaussians, candidate_cams, I_train_diag, pipe, background)
 
                     # Filter candidate poses that have been used before (by UV)
@@ -444,7 +446,7 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
                     # Create DummyCamera for selected pose
                     oracle_img = render_with_oracle(center_opt, object_center, pipe, oracle_gaussians, background, reference_camera)
                     final_cam = DummyCamera(*look_at(center_opt.detach(), object_center.detach()), reference_camera, image=oracle_img.detach())
-                elif method=="deepkgp":
+                elif args.deepkgp:
                     uncertainties = selector.compute_fisher_uncertainty(gaussians, candidate_cams, I_train_diag, pipe, background)
                     if train_iter > 1:
                         init_pose = get_robust_init_pose(proposal_uvs, uncertainties, u_bounds, v_bounds, sample_radius, strategy="diverse-fisher", eval_selected_cams=eval_selected_cams)
