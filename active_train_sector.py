@@ -372,7 +372,7 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
                     render_pkg = render(dummy, gaussians, pipe, background)
                     dense_cams.append(dummy)
 
-                fisher_vals_ablation = selector.compute_fisher_uncertainty(gaussians, dense_cams, I_train_diag, pipe, background)
+                # fisher_vals_ablation = selector.compute_fisher_uncertainty(gaussians, dense_cams, I_train_diag, pipe, background)
                 
                 if not args.deepkgp:
                     uncertainties = selector.compute_fisher_uncertainty(gaussians, candidate_cams, I_train_diag, pipe, background)
