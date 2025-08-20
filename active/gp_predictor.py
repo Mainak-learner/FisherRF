@@ -68,7 +68,7 @@ class DeepTPSGPModel(ExactGP):
         self.kernel_type = kernel_type
 
         # Pick kernel based on args
-        self.base_covar = make_kernel(kernel_type, embedding_dim=feature_extractor.output_dim)
+        self.base_covar = make_kernel(kernel_type, embedding_dim=64)
 
         self.covar_module = gpytorch.kernels.ScaleKernel(self.base_covar)
 
