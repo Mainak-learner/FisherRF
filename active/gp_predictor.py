@@ -136,11 +136,11 @@ class GPFisherNBVSelector(Module):
         sigma_max  = sigma.max().item()
         return sigma_mean, sigma_max
 
-    def train_dkl_gp(self, X_train, y_train, steps=200):
+    def train_dkl_gp(self, X_train, y_train, kernel_type = "rbf", steps=200):
         X_train = X_train.to(self.device)
         y_train = y_train.squeeze().to(self.device)
 
-        self.model = DeepTPSGPModel(X_train, y_train, self.likelihood, self.feature_extractor, kernel_type=self.kernel_type).to(self.device)       
+        self.model = DeepTPSGPModel(X_train, y_train, self.likelihood, self.feature_extractor, kernel_type=kernel_type).to(self.device)       
         self.model.train()
         self.likelihood.train()
 
@@ -224,6 +224,7 @@ class GPFisherNBVSelector(Module):
         image_encoder,
         steps=100,
         lr=1e-2,
+        kernel_type = "rbf"
     ):
         """
         Optimizes GP posterior mean over the hemisphere using Deep Kernel Learning,

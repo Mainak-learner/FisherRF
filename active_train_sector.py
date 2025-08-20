@@ -482,7 +482,8 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
                         render_fn=render_fn,
                         image_encoder=image_encoder,
                         steps=args.pose_optim_steps,
-                        lr=args.pose_lr
+                        lr=args.pose_lr,
+                        kernel=kernel
                     )
                     # init_pose_tensor = torch.tensor(init_pose, dtype=torch.float32, device="cuda")
                     # u = init_pose_tensor[0].unsqueeze(0)  # shape [1]
@@ -505,25 +506,25 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
                                 fisher_vals=to_numpy(fisher_vals_ablation),
                                 acquisition=acq_dense)
                 
-                elif method == "random":
-                    u_random = np.random.uniform(u_bounds[0], u_bounds[1])
-                    v_random = np.random.uniform(v_bounds[0], v_bounds[1])
-                    center_random = uv2car_torch(
-                        torch.tensor([u_random], device="cuda"),
-                        torch.tensor([v_random], device="cuda")
-                    ).squeeze(0) * sample_radius
-                    oracle_img = render_with_oracle(center_random, object_center, pipe, oracle_gaussians, background, reference_camera)
-                    final_cam = DummyCamera(*look_at(center_random.detach(), object_center.detach()), reference_camera, image=oracle_img.detach())
+                # elif method == "random":
+                #     u_random = np.random.uniform(u_bounds[0], u_bounds[1])
+                #     v_random = np.random.uniform(v_bounds[0], v_bounds[1])
+                #     center_random = uv2car_torch(
+                #         torch.tensor([u_random], device="cuda"),
+                #         torch.tensor([v_random], device="cuda")
+                #     ).squeeze(0) * sample_radius
+                #     oracle_img = render_with_oracle(center_random, object_center, pipe, oracle_gaussians, background, reference_camera)
+                #     final_cam = DummyCamera(*look_at(center_random.detach(), object_center.detach()), reference_camera, image=oracle_img.detach())
                 
-                elif method == "middle":
-                    u_middle = (u_bounds[0] + u_bounds[1]) / 2
-                    v_middle = (v_bounds[0] + v_bounds[1]) / 2
-                    center_middle = uv2car_torch(
-                        torch.tensor([u_middle], device="cuda"),
-                        torch.tensor([v_middle], device="cuda")
-                    ).squeeze(0) * sample_radius
-                    oracle_img = render_with_oracle(center_middle, object_center, pipe, oracle_gaussians, background, reference_camera)
-                    final_cam = DummyCamera(*look_at(center_middle.detach(), object_center.detach()), reference_camera, image=oracle_img.detach())
+                # elif method == "middle":
+                #     u_middle = (u_bounds[0] + u_bounds[1]) / 2
+                #     v_middle = (v_bounds[0] + v_bounds[1]) / 2
+                #     center_middle = uv2car_torch(
+                #         torch.tensor([u_middle], device="cuda"),
+                #         torch.tensor([v_middle], device="cuda")
+                #     ).squeeze(0) * sample_radius
+                #     oracle_img = render_with_oracle(center_middle, object_center, pipe, oracle_gaussians, background, reference_camera)
+                #     final_cam = DummyCamera(*look_at(center_middle.detach(), object_center.detach()), reference_camera, image=oracle_img.detach())
 
                 sector_selections.append(final_cam)
                 img_path = f"oracle_gt_visualization/pose_{len(eval_selected_cams) + len(sector_selections)}.png"
