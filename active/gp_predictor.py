@@ -254,7 +254,7 @@ class GPFisherNBVSelector(Module):
         X_train = torch.tensor(proposal_centers, dtype=torch.float32, device=device)
         y_train = uncertainties.to(device).squeeze()
 
-        self.train_dkl_gp(X_train, y_train)
+        self.train_dkl_gp(X_train, y_train, kernel_type)
         self.model.eval()
         self.likelihood.eval()
         image_encoder.eval()

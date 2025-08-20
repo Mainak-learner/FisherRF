@@ -484,7 +484,7 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
                         image_encoder=image_encoder,
                         steps=args.pose_optim_steps,
                         lr=args.pose_lr,
-                        kernel=kernel
+                        kernel_type=kernel
                     )
                     # init_pose_tensor = torch.tensor(init_pose, dtype=torch.float32, device="cuda")
                     # u = init_pose_tensor[0].unsqueeze(0)  # shape [1]
