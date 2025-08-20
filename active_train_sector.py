@@ -308,7 +308,7 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
     }
 
     # Kernel ablation loop
-    for kernel in ["rbf", "matern", "linear", "periodic", "spectral"]:
+    for kernel in ["rbf", "matern", "linear", "periodic"]:
         print(f"\n=== Starting sector-based training with kernel: {kernel} ===")
 
         gaussians = gaussians_dict[kernel]
