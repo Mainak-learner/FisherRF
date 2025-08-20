@@ -253,7 +253,7 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
                 gaussians.optimizer.step()
                 gaussians.optimizer.zero_grad(set_to_none = True)
     
-    lpips_metric = lpips_func("cuda", net_type='vgg').half
+    lpips_metric = lpips_func("cuda", net_type='vgg')
     psnr_total, ssim_total, lpips_total = 0.0, 0.0, 0.0
     test_cams = scene.getAllCameras(1.0)
 
