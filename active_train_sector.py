@@ -502,10 +502,10 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
                             return x.detach().cpu().numpy()
                         return np.array(x)
 
-                    np.savez(f"{args.model_path}/sector_{sector_id}_iter{train_iter}_acqmap.npz",
-                                uvs=dense_uvs,
-                                fisher_vals=to_numpy(fisher_vals_ablation),
-                                acquisition=acq_dense)
+                    # np.savez(f"{args.model_path}/sector_{sector_id}_iter{train_iter}_acqmap.npz",
+                    #             uvs=dense_uvs,
+                    #             fisher_vals=to_numpy(fisher_vals_ablation),
+                    #             acquisition=acq_dense)
                 
                 # elif method == "random":
                 #     u_random = np.random.uniform(u_bounds[0], u_bounds[1])
