@@ -258,7 +258,8 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
     test_cams = scene.getAllCameras(1.0)
 
     for i, cam in enumerate(uniform_test_cameras):
-        rendered = render(cam, gaussians, pipe, background)["render"].clamp(0, 1)
+        with torch.no_grad():
+            rendered = render(cam, gaussians, pipe, background)["render"].clamp(0, 1)
         psnr_total += psnr(rendered, oracle_renders[i]).mean().item()
         ssim_total += ssim(rendered, oracle_renders[i]).mean().item()
         lpips_total += lpips_metric(rendered, oracle_renders[i]).mean().item()
