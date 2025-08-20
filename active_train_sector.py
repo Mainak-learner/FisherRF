@@ -314,7 +314,7 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
         selected_cams = selected_cams_dict[kernel]
         eval_selected_cams = eval_selected_cams_dict[kernel]
 
-
+        print(f"Ablation with kernel: {kernel}")
         used_uvs_global = set()
 
         for train_iter in range(1, args.max_nbv_iterations + 1):
