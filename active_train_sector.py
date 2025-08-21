@@ -687,7 +687,7 @@ if __name__ == "__main__":
     parser.add_argument("--max_nbv_iterations", type=int, default=1, help="Iterations of Revolution around the object")
     parser.add_argument("--kernel_type", type=str, default="rbf", help="kernel type for deepkgp", choices=["tps", "rbf"])
     parser.add_argument("--exclude_deep_kernel", action="store_true", help="For removing deep feature extractor from DKL")
-    parser.add_argument("surf_plot_ablation", action="store_true", help="For dense metric sampling in case of surface plot ablation study")
+    parser.add_argument("--surf_plot_ablation", action="store_true", help="For dense metric sampling in case of surface plot ablation study")
     args = parser.parse_args()
 
     # Define sweep values
