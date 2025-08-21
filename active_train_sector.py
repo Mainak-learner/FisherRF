@@ -372,7 +372,8 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
                     render_pkg = render(dummy, gaussians, pipe, background)
                     dense_cams.append(dummy)
 
-                # fisher_vals_ablation = selector.compute_fisher_uncertainty(gaussians, dense_cams, I_train_diag, pipe, background)
+                if args.surf_plot_ablation:
+                    fisher_vals_ablation = selector.compute_fisher_uncertainty(gaussians, dense_cams, I_train_diag, pipe, background)
                 
                 if not args.deepkgp:
                     uncertainties = selector.compute_fisher_uncertainty(gaussians, candidate_cams, I_train_diag, pipe, background)
@@ -466,6 +467,7 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
                     image_encoder = ImageEncoder(output_dim=128).to("cuda")
 
                     center_opt, uv_opt, dense_uvs, acq_dense = selector.optimize_gp_posterior_dkl(
+                        args,
                         proposal_uvs=[all_uvs[i] for i in sector_indices],
                         proposal_centers=[all_centers[i].cpu().numpy() for i in sector_indices],
                         uncertainties=uncertainties,
@@ -684,7 +686,8 @@ if __name__ == "__main__":
     parser.add_argument("--vdgp", action="store_true", help="Use Variational Deep GP for uncertainty approximation")
     parser.add_argument("--max_nbv_iterations", type=int, default=1, help="Iterations of Revolution around the object")
     parser.add_argument("--kernel_type", type=str, default="rbf", help="kernel type for deepkgp", choices=["tps", "rbf"])
-    parser.add_argument("--exclude_deep_kernel", action="store_true", help="For remove deep feature extractor from DKL")
+    parser.add_argument("--exclude_deep_kernel", action="store_true", help="For removing deep feature extractor from DKL")
+    parser.add_argument("surf_plot_ablation", action="store_true", help="For dense metric sampling in case of surface plot ablation study")
     args = parser.parse_args()
 
     # Define sweep values

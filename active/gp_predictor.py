@@ -206,6 +206,7 @@ class GPFisherNBVSelector(Module):
 
     def optimize_gp_posterior_dkl(
         self,
+        args,
         proposal_uvs,
         proposal_centers,
         uncertainties,
@@ -278,16 +279,17 @@ class GPFisherNBVSelector(Module):
         dense_centers = torch.stack(dense_centers, dim=0)
         dense_centers = dense_centers.to(self.model.train_inputs[0].device)
         acq_dense = []
-        with torch.no_grad(), gpytorch.settings.fast_pred_var():
-            for i in range(dense_centers.shape[0]):
-                cam_center = dense_centers[i].unsqueeze(0).to(dtype=torch.float32)                
-                pred = self.model(cam_center)
-                mu = pred.mean
-                sigma = pred.variance.sqrt()
-                acq = self.reparameterized_acquisition(mu, sigma, num_samples=1, beta=beta)
-                acq_dense.append(acq.item())
+        if args.surf_plot_ablation:
+            with torch.no_grad(), gpytorch.settings.fast_pred_var():
+                for i in range(dense_centers.shape[0]):
+                    cam_center = dense_centers[i].unsqueeze(0).to(dtype=torch.float32)                
+                    pred = self.model(cam_center)
+                    mu = pred.mean
+                    sigma = pred.variance.sqrt()
+                    acq = self.reparameterized_acquisition(mu, sigma, num_samples=1, beta=beta)
+                    acq_dense.append(acq.item())
 
-        acq_dense = np.array(acq_dense)
+            acq_dense = np.array(acq_dense)
 
 
         for _ in range(steps):
