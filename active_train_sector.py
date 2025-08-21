@@ -140,7 +140,7 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
 
     object_center = oracle_gaussians.get_xyz.mean(dim=0).detach()
     reference_camera = scene.getAllCameras()[0]
-    sample_radius = torch.norm(reference_camera.camera_center).item()
+    sample_radius = torch.mean(reference_camera.camera_center).item()
 
     all_centers, all_uvs, pose_per_circle = generate_circular_hemisphere_poses(torch.tensor([0, 0, 0], device=object_center.device), num_circles=args.num_circles, min_poses=args.min_poses, radius=sample_radius)
     circle_indices, middle_circle_indices, sector_map = divide_hemisphere_poses(all_centers, object_center.cpu().numpy(), pose_per_circle, num_circles=args.num_circles)
@@ -281,39 +281,74 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
         selector = GPFisherNBVSelector(args, device="cuda")
 
     gaussians_dict = {
-        "rbf": deepcopy(gaussians),
-        "matern": deepcopy(gaussians),
-        "rq": deepcopy(gaussians),
-        "linear": deepcopy(gaussians),
-        "periodic": deepcopy(gaussians),
-        "spectral": deepcopy(gaussians),
+        "gp_rbf": deepcopy(gaussians),
+        "gp_matern": deepcopy(gaussians),
+        "gp_rq": deepcopy(gaussians),
+        "gp_linear": deepcopy(gaussians),
+        "gp_periodic": deepcopy(gaussians),
+        "gp_spectral": deepcopy(gaussians),
+        "dkl_rbf": deepcopy(gaussians),
+        "dkl_matern": deepcopy(gaussians),
+        "dkl_rq": deepcopy(gaussians),
+        "dkl_linear": deepcopy(gaussians),
+        "dkl_periodic": deepcopy(gaussians),
+        "dkl_spectral": deepcopy(gaussians),
     }
 
     selected_cams_dict = {
-        "rbf": deepcopy(selected_cams),
-        "matern": deepcopy(selected_cams),
-        "rq": deepcopy(selected_cams),
-        "linear": deepcopy(selected_cams),
-        "periodic": deepcopy(selected_cams),
-        "spectral": deepcopy(selected_cams),
+        "gp_rbf": deepcopy(selected_cams),
+        "gp_matern": deepcopy(selected_cams),
+        "gp_rq": deepcopy(selected_cams),
+        "gp_linear": deepcopy(selected_cams),
+        "gp_periodic": deepcopy(selected_cams),
+        "gp_spectral": deepcopy(selected_cams),
+        "dkl_rbf": deepcopy(selected_cams),
+        "dkl_matern": deepcopy(selected_cams),
+        "dkl_rq": deepcopy(selected_cams),
+        "dkl_linear": deepcopy(selected_cams),
+        "dkl_periodic": deepcopy(selected_cams),
+        "dkl_spectral": deepcopy(selected_cams),
     }
 
     eval_selected_cams_dict = {
-        "rbf": deepcopy(selected_cams),
-        "matern": deepcopy(selected_cams),
-        "rq": deepcopy(selected_cams),
-        "linear": deepcopy(selected_cams),
-        "periodic": deepcopy(selected_cams),
-        "spectral": deepcopy(selected_cams),
+        "gp_rbf": deepcopy(selected_cams),
+        "gp_matern": deepcopy(selected_cams),
+        "gp_rq": deepcopy(selected_cams),
+        "gp_linear": deepcopy(selected_cams),
+        "gp_periodic": deepcopy(selected_cams),
+        "gp_spectral": deepcopy(selected_cams),
+        "dkl_rbf": deepcopy(selected_cams),
+        "dkl_matern": deepcopy(selected_cams),
+        "dkl_rq": deepcopy(selected_cams),
+        "dkl_linear": deepcopy(selected_cams),
+        "dkl_periodic": deepcopy(selected_cams),
+        "dkl_spectral": deepcopy(selected_cams),
     }
 
     # Kernel ablation loop
-    for kernel in ["rbf", "matern", "linear", "periodic"]:
+    kernel_variants = [
+        "gp_rbf", "gp_matern", "gp_linear", "gp_periodic",   # plain GP
+        "dkl_rbf", "dkl_matern", "dkl_linear", "dkl_periodic"  # DKL
+    ]
+
+    for kernel in kernel_variants:
         print(f"\n=== Starting sector-based training with kernel: {kernel} ===")
 
-        gaussians = gaussians_dict[kernel]
-        selected_cams = selected_cams_dict[kernel]
-        eval_selected_cams = eval_selected_cams_dict[kernel]
+        # Assign correct model copy
+        base_kernel = kernel.split("_")[1]
+        gaussians = gaussians_dict[base_kernel]
+        selected_cams = selected_cams_dict[base_kernel]
+        eval_selected_cams = eval_selected_cams_dict[base_kernel]
+
+        # Configure selector
+        if kernel.startswith("gp_"):
+            args.exclude_deep_kernel = True
+            args.kernel_type = base_kernel
+            selector = GPFisherNBVSelector(args, device="cuda")  # just GP
+        elif kernel.startswith("dkl_"):
+            args.exclude_deep_kernel = False
+            args.kernel_type = base_kernel
+            selector = GPFisherNBVSelector(args, device="cuda")  # DKL
 
         print(f"Ablation with kernel: {kernel}")
         used_uvs_global = set()
