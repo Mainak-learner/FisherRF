@@ -176,7 +176,7 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, args):
         with torch.no_grad():
             rendered = render_with_oracle(cam_center, object_center, pipe, oracle_gaussians, torch.tensor([1.0, 1.0, 1.0], device="cuda"), reference_camera)
         oracle_renders.append(rendered.clamp(0, 1))
-    middle_ids = np.random.choice(middle_circle_indices, size=15, replace=False)
+    middle_ids = np.random.choice(middle_circle_indices, size=10, replace=False)
     selected_cams = []
 
     selected_middle_centers = []
